@@ -144,11 +144,11 @@ class TFSystemCog(commands.Cog):
             if intent['action'] == 'unknown':
                 await interaction.followup.send(
                     f"❌ I couldn't understand that command.\n"
-                    f"Reason: {intent.get('reason', 'Unknown error')}\n\n"
+                    f"Try to rephrase your command, use full usernames, etc.\n"
                     f"Try something like:\n"
-                    f"- Change João's rank to Commander\n"
-                    f"- Show all Paladins\n"
-                    f"- What rank is Sarah?"
+                    f"- Change X's rank to Y\n"
+                    f"- Show all Exemplars\n"
+                    f"- What rank is X?"
                 )
                 return
             
@@ -466,3 +466,4 @@ if __name__ == '__main__':
     import asyncio
     asyncio.run(main())
 """
+
