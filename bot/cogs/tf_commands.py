@@ -12,12 +12,28 @@ import os
 from groq import Groq
 import json
 import asyncio
+from dotenv import load_dotenv
 
-# Import the TF API client
+# Load .env from parent bot directory
+env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env')
+load_dotenv(env_path)
+print(f"[TF Commands] Loaded .env from: {env_path}")
+
+# Import the TF API client (from parent directory)
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from tf_api_client import TFSystemAPI
 
+# Get Groq configuration from environment
+GROQ_API_KEY = os.getenv('GROQ_API_KEY')
+GROQ_MODEL = os.getenv('GROQ_MODEL')
+
+# Debug: Show which model is being used
+print(f"[TF Commands] Using Groq model: {GROQ_MODEL}")
+
 # Initialize Groq client
-groq_client = Groq(api_key=os.getenv('GROQ_API_KEY'))
+groq_client = Groq(api_key=GROQ_API_KEY)
 
 # Initialize TF System API
 tf_api = TFSystemAPI(
@@ -72,12 +88,34 @@ Valid actions:
 Valid ranks: Aspirant, Novice, Adept, Crusader, Paladin, Exemplar, Prospect, Commander, Marshal, General, Chief General
 Valid activity types: Raid, Patrol, Training, Mission, Tryout
 
+IMPORTANT: Recognize these variations for listing members:
+- "show all members" -> list_members with no rank filter
+- "list all members" -> list_members with no rank filter
+- "show all [rank]" -> list_members with rank filter (e.g., "show all generals" -> rank: "General")
+- "list all [rank]s" -> list_members with rank filter (e.g., "list all commanders" -> rank: "Commander")
+- "show [rank]s" -> list_members with rank filter
+- "list generals" -> list_members with rank: "General"
+- "show commanders" -> list_members with rank: "Commander"
+- "what rank is [member name]" -> get_member_info with member name
+- "what rank is [member name]" -> get_member_info, look up for members with similar letters, people may use nicknames, if i say "slater" i refer to slaterjl2006 for example
+
+Note: Always use SINGULAR form of rank names (General, not Generals; Commander, not Commanders)
+
+Examples of correct parsing:
+1. "show all generals" -> {"action": "list_members", "parameters": {"rank": "General"}}
+2. "list all commanders" -> {"action": "list_members", "parameters": {"rank": "Commander"}}
+3. "show paladins" -> {"action": "list_members", "parameters": {"rank": "Paladin"}}
+4. "list everyone" -> {"action": "list_members", "parameters": {}}
+5. "change John to Commander" -> {"action": "change_rank", "parameters": {"member_name": "John", "new_rank": "Commander"}}
+6. "what rank is Sarah?" -> {"action": "get_member_info", "parameters": {"member_name": "Sarah"}}
+
 Respond ONLY with a JSON object in this format:
 {
   "action": "action_name",
   "parameters": {
     "member_name": "extracted name",
     "new_rank": "rank name",
+    "rank": "rank filter",
     "activity_type": "activity type",
     etc.
   },
@@ -88,7 +126,7 @@ If you can't parse the command, set action to "unknown" and explain in a "reason
 
     try:
         completion = groq_client.chat.completions.create(
-            model="llama-3.1-70b-versatile",  # Use appropriate Groq model
+            model=GROQ_MODEL,  # Use model from environment variable
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_message}
@@ -109,10 +147,11 @@ If you can't parse the command, set action to "unknown" and explain in a "reason
         return intent
         
     except Exception as e:
+        # Log the error for debugging but don't expose technical details to users
         print(f"Error parsing intent with Groq: {e}")
         return {
             "action": "unknown",
-            "reason": f"Failed to parse command: {str(e)}",
+            "reason": "I had trouble understanding that command",
             "confidence": 0.0
         }
 
@@ -126,15 +165,6 @@ class TFSystemCog(commands.Cog):
     @app_commands.command(name="tf", description="Natural language TF management command")
     @has_tf_permissions()
     async def tf_command(self, interaction: discord.Interaction, command: str):
-        """
-        Main TF management command that accepts natural language
-        
-        Examples:
-            /tf change João's rank to Commander
-            /tf show all members with rank Paladin
-            /tf add member Mike with rank Aspirant
-            /tf what is Sarah's rank?
-        """
         await interaction.response.defer()  # Processing may take a moment
         
         try:
@@ -253,7 +283,7 @@ class TFSystemCog(commands.Cog):
             embed.add_field(name="Discord", value=member_data['discord_username'], inline=True)
             embed.add_field(name="Roblox", value=member_data.get('roblox_username') or 'Not set', inline=True)
             embed.add_field(name="Current Rank", value=member_data['current_rank'], inline=True)
-            embed.add_field(name="Join Date", 
+            embed.add_field(name="System join Date", 
                           value=member_data.get('join_date', 'Unknown')[:10] if member_data.get('join_date') else 'Unknown',
                           inline=True)
             
@@ -466,4 +496,5 @@ if __name__ == '__main__':
     import asyncio
     asyncio.run(main())
 """
+
 
