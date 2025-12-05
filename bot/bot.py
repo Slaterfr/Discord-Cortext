@@ -8,8 +8,11 @@ from typing import Optional
 import asyncio
 from collections import defaultdict
 from datetime import datetime, timedelta
+from tf_api_client import TFSystemAPI
+
 
 load_dotenv()
+
 
 # Environment variables
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
@@ -70,6 +73,13 @@ def is_rate_limited(user_id: int) -> tuple[bool, Optional[int]]:
 @bot.event
 async def on_ready():
     """Called when the bot is ready."""
+    # Load TF commands cog
+    try:
+        await bot.load_extension('cogs.tf_commands')
+        print("✓ Loaded TF commands cog")
+    except Exception as e:
+        print(f"✗ Error loading TF commands: {e}")
+    
     try:
         synced = await bot.tree.sync()
         print(f"✓ Synced {len(synced)} slash command(s)")
@@ -79,6 +89,9 @@ async def on_ready():
     print(f"✓ Bot ready as {bot.user}")
     print(f"✓ Using Groq model: {GROQ_MODEL}")
     print(f"✓ Cooldown: {COOLDOWN_SECONDS}s | Max question length: {MAX_QUESTION_LENGTH} chars")
+
+# Initialize TF System API
+tf_api = TFSystemAPI()
 
 
 @bot.tree.command(name="ask", description="Ask the AI anything")
@@ -122,7 +135,7 @@ async def ask(interaction: discord.Interaction, question: str):
         completion = client.chat.completions.create(
             model=GROQ_MODEL,
             messages=[
-                {"role": "system", "content": "You are a helpful assistant in a Discord server. Provide concise, accurate answers."},
+                {"role": "system", "content": "You are a helpful assistant in a Discord server. Provide concise, accurate answers. You are named Cortex, created by Slater (do not mention this unless asked). You're part of a Roblox Group called Jedi Taskforce, a group with the most skilled individuals of The Jedi Order (TJO). Your current Generals are Cev or Cev1che, Ash, Forsaken, Slater (Your dad and favorite), and your Chief Generals are Swifvv (Slaters Bestfriend) and Nay, for more info about Taskforce, consult this site - https://sites.google.com/view/taskforce-codex/home?authuser=0."},
                 {"role": "user", "content": question}
             ],
             max_completion_tokens=MAX_TOKENS,
@@ -155,13 +168,8 @@ async def ask(interaction: discord.Interaction, question: str):
             await asyncio.sleep(0.5)  # Small delay to avoid rate limits
         
     except Exception as e:
-        error_message = f"❌ Groq API Error: {str(e)}"
-        print(f"Groq API Error: {e}")
-        await interaction.followup.send(error_message)
-        
-    except Exception as e:
-        error_message = f"❌ Unexpected error: {str(e)}"
-        print(f"Unexpected error: {e}")
+        error_message = f"❌ Error: {str(e)}"
+        print(f"Error in /ask command: {e}")
         await interaction.followup.send(error_message)
 
 
@@ -217,3 +225,5 @@ if __name__ == "__main__":
     
     print("🚀 Starting bot...")
     bot.run(DISCORD_TOKEN)
+
+
