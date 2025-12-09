@@ -1,543 +1,374 @@
 """
-Example Discord Bot Commands for TF System Integration
-This shows how to integrate the TF API client with discord.py and Groq AI
+TF System API Client for Discord Bot
+This module provides an easy-to-use Python client for interacting with TF_System API from your Discord bot."""
 
-IMPORTANT: This is example code to help you integrate. Copy these patterns into your bot.
-"""
-
-import discord
-from discord.ext import commands
-from discord import app_commands
+import aiohttp
 import os
-from groq import Groq
-import json
-import asyncio
-from dotenv import load_dotenv
-
-# Load .env from parent bot directory
-env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env')
-load_dotenv(env_path)
-print(f"[TF Commands] Loaded .env from: {env_path}")
-
-# Import the TF API client (from parent directory)
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from tf_api_client import TFSystemAPI
-
-# Get Groq configuration from environment
-GROQ_API_KEY = os.getenv('GROQ_API_KEY')
-GROQ_MODEL = os.getenv('GROQ_MODEL')
-
-# Debug: Show which model is being used
-print(f"[TF Commands] Using Groq model: {GROQ_MODEL}")
-
-# Initialize Groq client
-groq_client = Groq(api_key=GROQ_API_KEY)
-
-# Initialize TF System API
-tf_api = TFSystemAPI(
-    api_url=os.getenv('TF_SYSTEM_API_URL'),
-    api_key=os.getenv('TF_SYSTEM_API_KEY')
-)
-
-# Define allowed roles (Commander, Marshal, General)
-ALLOWED_ROLES = ['Commander', 'Marshal', 'General']
+from typing import Optional, Dict, List
+from datetime import datetime
 
 
-def has_tf_permissions():
-    """Decorator to check if user has permission to manage TF"""
-    async def predicate(interaction: discord.Interaction):
-        # Check if user has any of the allowed roles
-        user_roles = [role.name for role in interaction.user.roles]
-        has_permission = any(role in ALLOWED_ROLES for role in user_roles)
-        
-        if not has_permission:
-            await interaction.response.send_message(
-                "❌ You don't have permission to use this command. "
-                f"Required roles: {', '.join(ALLOWED_ROLES)}",
-                ephemeral=True
-            )
-        
-        return has_permission
-    
-    return app_commands.check(predicate)
-
-
-def get_user_tf_rank(user: discord.Member) -> str:
+class TFSystemAPI:
     """
-    Get the user's highest TF rank from their Discord roles.
+    Client for interacting with TF System API
     
-    Args:
-        user: Discord member object
-    
-    Returns:
-        str: Highest rank name, or None if no TF rank found
+    Usage:
+        api = TFSystemAPI(
+            api_url="https://your-tf-system.onrender.com/api/v1",
+            api_key="your-api-key-here"
+        )
+        
+        # Get all members
+        members = await api.get_members()
+        
+        # Change rank
+        result = await api.change_member_rank(
+            member_id=1,
+            new_rank="Commander",
+            discord_user_id=str(ctx.author.id)
+        )
     """
-    from tf_api_client import RANK_HIERARCHY, get_rank_level
     
-    user_roles = [role.name for role in user.roles]
+    def __init__(self, api_url: str = None, api_key: str = None):
+        """
+        Initialize the API client
+        
+        Args:
+            api_url: Base URL of the TF System API (e.g., https://your-app.onrender.com/api/v1)
+            api_key: API key for authentication
+        """
+        self.api_url = api_url or os.getenv('TF_SYSTEM_API_URL', 'http://localhost:5000/api/v1')
+        self.api_key = api_key or os.getenv('TF_SYSTEM_API_KEY', '')
+        
+        if not self.api_key:
+            raise ValueError("API key must be provided or set in TF_SYSTEM_API_KEY environment variable")
+        
+        self.headers = {
+            'Authorization': f'Bearer {self.api_key}',
+            'Content-Type': 'application/json'
+        }
     
-    # Find all TF ranks the user has
-    tf_ranks = [role for role in user_roles if role in RANK_HIERARCHY]
+    async def _request(self, method: str, endpoint: str, **kwargs) -> Dict:
+        """Make an HTTP request to the API"""
+        url = f"{self.api_url}{endpoint}"
+        
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.request(method, url, headers=self.headers, **kwargs) as response:
+                    data = await response.json()
+                    
+                    # Check for rate limiting
+                    if response.status == 429:
+                        return {
+                            'success': False,
+                            'error': 'rate_limit',
+                            'message': 'Rate limit exceeded. Please wait a moment and try again.',
+                            **data
+                        }
+                    
+                    return data
+            except aiohttp.ClientError as e:
+                return {
+                    'success': False,
+                    'error': 'connection_error',
+                    'message': f'Failed to connect to TF System: {str(e)}'
+                }
+            except Exception as e:
+                return {
+                    'success': False,
+                    'error': 'unknown_error',
+                    'message': f'Unexpected error: {str(e)}'
+                }
     
-    if not tf_ranks:
+    # ========================================
+    # SYSTEM STATUS
+    # ========================================
+    
+    async def get_status(self) -> Dict:
+        """
+        Get system status
+        
+        Returns:
+            dict: System status information
+        """
+        return await self._request('GET', '/status')
+    
+    async def verify_auth(self) -> Dict:
+        """
+        Verify API authentication
+        
+        Returns:
+            dict: Authentication verification result
+        """
+        return await self._request('POST', '/auth/verify')
+    
+    # ========================================
+    # MEMBER MANAGEMENT
+    # ========================================
+    
+    async def get_members(self, search: str = None, rank: str = None, limit: int = 100) -> Dict:
+        """
+        Get list of all active members
+        
+        Args:
+            search: Search query (username or rank)
+            rank: Filter by specific rank
+            limit: Maximum number of results
+        
+        Returns:
+            dict: List of members
+        """
+        params = {}
+        if search:
+            params['search'] = search
+        if rank:
+            params['rank'] = rank
+        if limit:
+            params['limit'] = limit
+        
+        return await self._request('GET', '/members', params=params)
+    
+    async def get_member(self, member_id: int) -> Dict:
+        """
+        Get detailed information about a specific member
+        
+        Args:
+            member_id: Member ID
+        
+        Returns:
+            dict: Member details including activities and rank history
+        """
+        return await self._request('GET', f'/members/{member_id}')
+    
+    async def search_member(self, name: str, field: str = 'both') -> Dict:
+        """
+        Search for a member by name
+        
+        Args:
+            name: Name to search for
+            field: Field to search ('discord_username', 'roblox_username', or 'both')
+        
+        Returns:
+            dict: Search results
+        """
+        params = {'q': name, 'field': field}
+        return await self._request('GET', '/members/search', params=params)
+    
+    async def change_member_rank(self, member_id: int, new_rank: str, 
+                                  reason: str = None, discord_user_id: str = None) -> Dict:
+        """
+        Change a member's rank
+        
+        Args:
+            member_id: Member ID
+            new_rank: New rank name
+            reason: Reason for rank change
+            discord_user_id: Discord user ID who made the change
+        
+        Returns:
+            dict: Rank change result
+        """
+        data = {
+            'rank': new_rank,
+            'reason': reason or 'Changed via Discord Bot',
+            'promoted_by': 'Discord Bot'
+        }
+        
+        if discord_user_id:
+            data['discord_user_id'] = discord_user_id
+        
+        return await self._request('PATCH', f'/members/{member_id}/rank', json=data)
+    
+    async def add_member(self, discord_username: str, roblox_username: str = None,
+                        current_rank: str = 'Aspirant', discord_user_id: str = None) -> Dict:
+        """
+        Add a new member to the system
+        
+        Args:
+            discord_username: Discord username (required)
+            roblox_username: Roblox username (optional)
+            current_rank: Initial rank (default: Aspirant)
+            discord_user_id: Discord user ID who added the member
+        
+        Returns:
+            dict: Add member result
+        """
+        data = {
+            'discord_username': discord_username,
+            'current_rank': current_rank
+        }
+        
+        if roblox_username:
+            data['roblox_username'] = roblox_username
+        
+        if discord_user_id:
+            data['discord_user_id'] = discord_user_id
+        
+        return await self._request('POST', '/members', json=data)
+    
+    async def remove_member(self, member_id: int, discord_user_id: str = None) -> Dict:
+        """
+        Remove a member (mark as inactive)
+        
+        Args:
+            member_id: Member ID
+            discord_user_id: Discord user ID who removed the member
+        
+        Returns:
+            dict: Remove member result
+        """
+        data = {}
+        if discord_user_id:
+            data['discord_user_id'] = discord_user_id
+        
+        return await self._request('DELETE', f'/members/{member_id}', json=data)
+    
+    # ========================================
+    # RANK MANAGEMENT
+    # ========================================
+    
+    async def get_ranks(self) -> Dict:
+        """
+        Get list of all available ranks
+        
+        Returns:
+            dict: List of ranks with Roblox mappings
+        """
+        return await self._request('GET', '/ranks')
+    
+    # ========================================
+    # ACTIVITY MANAGEMENT
+    # ========================================
+    
+    async def log_activity(self, member_id: int, activity_type: str,
+                          description: str = None, activity_date: str = None,
+                          discord_user_id: str = "Cortex") -> Dict:
+        """
+        Log an activity for a member
+        
+        Args:
+            member_id: Member ID
+            activity_type: Type of activity (Raid, Patrol, Training, Mission, Tryout)
+            description: Activity description
+            activity_date: Date in YYYY-MM-DD format (default: today)
+            discord_user_id: Discord user ID who logged the activity
+        
+        Returns:
+            dict: Log activity result
+        """
+        data = {
+            'member_id': member_id,
+            'activity_type': activity_type
+        }
+        
+        if description:
+            data['description'] = description
+        
+        if activity_date:
+            data['activity_date'] = activity_date
+        
+        if discord_user_id:
+            data['discord_user_id'] = discord_user_id
+        
+        return await self._request('POST', '/activity', json=data)
+    
+    async def get_member_activities(self, member_id: int, limit: int = 20) -> Dict:
+        """
+        Get activities for a specific member
+        
+        Args:
+            member_id: Member ID
+            limit: Number of activities to return
+        
+        Returns:
+            dict: List of activities
+        """
+        params = {'limit': limit}
+        return await self._request('GET', f'/members/{member_id}/activities', params=params)
+    
+    # ========================================
+    # HELPER METHODS
+    # ========================================
+    
+    async def find_member_by_name(self, name: str) -> Optional[Dict]:
+        """
+        Find a member by Discord or Roblox username
+        
+        Args:
+            name: Name to search for
+        
+        Returns:
+            dict or None: Member info if found, None otherwise
+        """
+        result = await self.search_member(name)
+        
+        if result.get('success') and result.get('matches'):
+            return result['matches'][0]
+        
         return None
     
-    # Return the highest rank
-    highest_rank = max(tf_ranks, key=get_rank_level)
-    return highest_rank
-
-
-async def parse_intent_with_groq(user_message: str) -> dict:
-    """
-    Use Groq AI to parse user intent and extract entities
-    
-    Args:
-        user_message: The user's natural language command
-    
-    Returns:
-        dict: Parsed intent with action, parameters, etc.
-    """
-    system_prompt = """You are a command parser for a Taskforce Management System.
-Parse user commands and extract the intent and entities.
-
-Valid actions:
-- change_rank: Change a member's rank
-- get_member_info: Get information about a member
-- list_members: List all members or filter by rank
-- add_member: Add a new member
-- remove_member: Remove a member
-- log_activity: Log an activity for a member
-
-Valid ranks: Aspirant, Novice, Adept, Crusader, Paladin, Exemplar, Prospect, Commander, Marshal, General, Chief General
-Valid activity types: Raid, Patrol, Training, Mission, Tryout
-
-IMPORTANT: Recognize these variations for listing members:
-- "show all members" -> list_members with no rank filter
-- "list all members" -> list_members with no rank filter
-- "show all [rank]" -> list_members with rank filter (e.g., "show all generals" -> rank: "General")
-- "list all [rank]s" -> list_members with rank filter (e.g., "list all commanders" -> rank: "Commander")
-- "show [rank]s" -> list_members with rank filter
-- "list generals" -> list_members with rank: "General"
-- "show commanders" -> list_members with rank: "Commander"
-- "what rank is [member name]" -> get_member_info with member name
-- "what rank is [member name]" -> get_member_info, look up for members with similar letters, people may use nicknames, if i say "slater" i refer to slaterjl2006 for example
-
-Note: Always use SINGULAR form of rank names (General, not Generals; Commander, not Commanders)
-
-Examples of correct parsing:
-1. "show all generals" -> {"action": "list_members", "parameters": {"rank": "General"}}
-2. "list all commanders" -> {"action": "list_members", "parameters": {"rank": "Commander"}}
-3. "show paladins" -> {"action": "list_members", "parameters": {"rank": "Paladin"}}
-4. "list everyone" -> {"action": "list_members", "parameters": {}}
-5. "change John to Commander" -> {"action": "change_rank", "parameters": {"member_name": "John", "new_rank": "Commander"}}
-6. "what rank is Sarah?" -> {"action": "get_member_info", "parameters": {"member_name": "Sarah"}}
-
-Respond ONLY with a JSON object in this format:
-{
-  "action": "action_name",
-  "parameters": {
-    "member_name": "extracted name",
-    "new_rank": "rank name",
-    "rank": "rank filter",
-    "activity_type": "activity type",
-    etc.
-  },
-  "confidence": 0.0-1.0
-}
-
-If you can't parse the command, set action to "unknown" and explain in a "reason" field."""
-
-    try:
-        completion = groq_client.chat.completions.create(
-            model=GROQ_MODEL,  # Use model from environment variable
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message}
-            ],
-            temperature=0.1,
-            max_tokens=500
-        )
+    async def change_rank_by_name(self, member_name: str, new_rank: str,
+                                   reason: str = None, discord_user_id: str = None) -> Dict:
+        """
+        Change a member's rank by name (convenience method)
         
-        response_text = completion.choices[0].message.content
+        Args:
+            member_name: Discord or Roblox username
+            new_rank: New rank name
+            reason: Reason for rank change
+            discord_user_id: Discord user ID who made the change
         
-        # Extract JSON from response (in case there's extra text)
-        json_start = response_text.find('{')
-        json_end = response_text.rfind('}') + 1
-        if json_start != -1 and json_end != 0:
-            response_text = response_text[json_start:json_end]
-        
-        intent = json.loads(response_text)
-        return intent
-        
-    except Exception as e:
-        # Log the error for debugging but don't expose technical details to users
-        print(f"Error parsing intent with Groq: {e}")
-        return {
-            "action": "unknown",
-            "reason": "I had trouble understanding that command",
-            "confidence": 0.0
-        }
-
-
-class TFSystemCog(commands.Cog):
-    """Cog for TF System management commands"""
-    
-    def __init__(self, bot):
-        self.bot = bot
-    
-    @app_commands.command(name="tf", description="Natural language TF management command")
-    @has_tf_permissions()
-    async def tf_command(self, interaction: discord.Interaction, command: str):
-        await interaction.response.defer()  # Processing may take a moment
-        
-        try:
-            # Parse intent using Groq
-            intent = await parse_intent_with_groq(command)
-            
-            if intent['action'] == 'unknown':
-                await interaction.followup.send(
-                    f"❌ I couldn't understand that command.\n"
-                    f"Try to rephrase your command, use full usernames, etc.\n"
-                    f"Try something like:\n"
-                    f"- Change X's rank to Y\n"
-                    f"- Show all Exemplars\n"
-                    f"- What rank is X?"
-                )
-                return
-            
-            # Execute based on action
-            if intent['action'] == 'change_rank':
-                await self._handle_change_rank(interaction, intent['parameters'])
-            
-            elif intent['action'] == 'get_member_info':
-                await self._handle_get_member_info(interaction, intent['parameters'])
-            
-            elif intent['action'] == 'list_members':
-                await self._handle_list_members(interaction, intent['parameters'])
-            
-            elif intent['action'] == 'add_member':
-                await self._handle_add_member(interaction, intent['parameters'])
-            
-            elif intent['action'] == 'remove_member':
-                await self._handle_remove_member(interaction, intent['parameters'])
-            
-            elif intent['action'] == 'log_activity':
-                await self._handle_log_activity(interaction, intent['parameters'])
-            
-            else:
-                await interaction.followup.send(
-                    f"❌ Unknown action: {intent['action']}"
-                )
-        
-        except Exception as e:
-            print(f"Error executing TF command: {e}")
-            await interaction.followup.send(
-                f"❌ An error occurred: {str(e)}"
-            )
-    
-    async def _handle_change_rank(self, interaction: discord.Interaction, params: dict):
-        """Handle rank change requests"""
-        member_name = params.get('member_name')
-        new_rank = params.get('new_rank')
-        
-        if not member_name or not new_rank:
-            await interaction.followup.send(
-                "❌ I need both a member name and a new rank."
-            )
-            return
-        
-        # Get user's TF rank for permission checking
-        user_rank = get_user_tf_rank(interaction.user)
-        
-        if not user_rank:
-            await interaction.followup.send(
-                "❌ Could not determine your rank. Please contact an administrator."
-            )
-            return
-        
-        # Call API to change rank
-        result = await tf_api.change_rank_by_name(
-            member_name=member_name,
-            new_rank=new_rank,
-            reason=f"Promoted via Discord by {interaction.user.name}",
-            discord_user_id=str(interaction.user.id),
-            user_rank=user_rank
-        )
-        
-        if result.get('success'):
-            member = result['member']
-            roblox_sync = result.get('roblox_sync', {})
-            
-            embed = discord.Embed(
-                title="✅ Rank Updated",
-                description=f"Successfully updated **{member['discord_username']}**'s rank",
-                color=discord.Color.green()
-            )
-            embed.add_field(name="Old Rank", value=member['old_rank'], inline=True)
-            embed.add_field(name="New Rank", value=member['new_rank'], inline=True)
-            embed.add_field(name="Roblox Sync", 
-                          value="✅ Success" if roblox_sync.get('success') else "❌ Failed",
-                          inline=False)
-            embed.set_footer(text=f"Changed by {interaction.user.name}")
-            
-            await interaction.followup.send(embed=embed)
-        else:
-            # Handle permission denied error with clear message
-            error_type = result.get('error', 'unknown')
-            error_message = result.get('message', 'Unknown error')
-            
-            if error_type == 'permission_denied':
-                await interaction.followup.send(f"❌ {error_message}")
-            else:
-                await interaction.followup.send(
-                    f"❌ Failed to change rank: {error_message}"
-                )
-    
-    async def _handle_get_member_info(self, interaction: discord.Interaction, params: dict):
-        """Handle member info requests"""
-        member_name = params.get('member_name')
-        
-        if not member_name:
-            await interaction.followup.send("❌ I need a member name.")
-            return
-        
-        # Search for member
-        member = await tf_api.find_member_by_name(member_name)
-        
-        if not member:
-            await interaction.followup.send(
-                f"❌ Could not find member **{member_name}**"
-            )
-            return
-        
-        # Get detailed info
-        detailed_info = await tf_api.get_member(member['id'])
-        
-        if detailed_info.get('success'):
-            member_data = detailed_info['member']
-            
-            embed = discord.Embed(
-                title=f"📊 Member Info: {member_data['discord_username']}",
-                color=discord.Color.blue()
-            )
-            embed.add_field(name="Discord", value=member_data['discord_username'], inline=True)
-            embed.add_field(name="Roblox", value=member_data.get('roblox_username') or 'Not set', inline=True)
-            embed.add_field(name="Current Rank", value=member_data['current_rank'], inline=True)
-            embed.add_field(name="System join Date", 
-                          value=member_data.get('join_date', 'Unknown')[:10] if member_data.get('join_date') else 'Unknown',
-                          inline=True)
-            
-            # Add recent activities
-            if member_data.get('recent_activities'):
-                activities_text = "\n".join([
-                    f"• {a['type']} ({a['points']} pts) - {a['date'][:10] if a.get('date') else 'N/A'}"
-                    for a in member_data['recent_activities'][:5]
-                ])
-                embed.add_field(name="Recent Activities", value=activities_text or "None", inline=False)
-            
-            await interaction.followup.send(embed=embed)
-        else:
-            await interaction.followup.send(
-                f"❌ Failed to get member info: {detailed_info.get('message')}"
-            )
-    
-    async def _handle_list_members(self, interaction: discord.Interaction, params: dict):
-        """Handle list members requests"""
-        rank_filter = params.get('rank')
-        
-        # Get members
-        result = await tf_api.get_members(rank=rank_filter)
-        
-        if result.get('success'):
-            members = result['members']
-            
-            if not members:
-                await interaction.followup.send(
-                    f"No members found" + (f" with rank **{rank_filter}**" if rank_filter else "")
-                )
-                return
-            
-            # Create embeds (Discord has limits, so paginate if needed)
-            embed = discord.Embed(
-                title=f"📋 Members" + (f" - Rank: {rank_filter}" if rank_filter else ""),
-                description=f"Total: {len(members)} members",
-                color=discord.Color.blue()
-            )
-            
-            # Group by rank
-            members_by_rank = {}
-            for member in members:
-                rank = member['current_rank']
-                if rank not in members_by_rank:
-                    members_by_rank[rank] = []
-                members_by_rank[rank].append(member['discord_username'])
-            
-            # Add fields for each rank
-            for rank, member_list in sorted(members_by_rank.items()):
-                members_text = ", ".join(member_list[:10])  # Limit to avoid overflow
-                if len(member_list) > 10:
-                    members_text += f" ... +{len(member_list) - 10} more"
-                embed.add_field(name=f"{rank} ({len(member_list)})", value=members_text, inline=False)
-            
-            await interaction.followup.send(embed=embed)
-        else:
-            await interaction.followup.send(
-                f"❌ Failed to get members: {result.get('message')}"
-            )
-    
-    async def _handle_add_member(self, interaction: discord.Interaction, params: dict):
-        """Handle add member requests"""
-        discord_username = params.get('discord_username')
-        roblox_username = params.get('roblox_username')
-        rank = params.get('rank', 'Aspirant')
-        
-        if not discord_username:
-            await interaction.followup.send("❌ I need a Discord username.")
-            return
-        
-        # Add member
-        result = await tf_api.add_member(
-            discord_username=discord_username,
-            roblox_username=roblox_username,
-            current_rank=rank,
-            discord_user_id=str(interaction.user.id)
-        )
-        
-        if result.get('success'):
-            member = result['member']
-            
-            embed = discord.Embed(
-                title="✅ Member Added",
-                description=f"Successfully added **{member['discord_username']}**",
-                color=discord.Color.green()
-            )
-            embed.add_field(name="Discord", value=member['discord_username'], inline=True)
-            embed.add_field(name="Roblox", value=member.get('roblox_username') or 'Not set', inline=True)
-            embed.add_field(name="Rank", value=member['current_rank'], inline=True)
-            embed.set_footer(text=f"Added by {interaction.user.name}")
-            
-            await interaction.followup.send(embed=embed)
-        else:
-            await interaction.followup.send(
-                f"❌ Failed to add member: {result.get('message')}"
-            )
-    
-    async def _handle_remove_member(self, interaction: discord.Interaction, params: dict):
-        """Handle remove member requests"""
-        member_name = params.get('member_name')
-        
-        if not member_name:
-            await interaction.followup.send("❌ I need a member name.")
-            return
-        
+        Returns:
+            dict: Rank change result
+        """
         # Find member first
-        member = await tf_api.find_member_by_name(member_name)
+        member = await self.find_member_by_name(member_name)
         
         if not member:
-            await interaction.followup.send(
-                f"❌ Could not find member **{member_name}**"
-            )
-            return
+            return {
+                'success': False,
+                'error': 'member_not_found',
+                'message': f'Could not find member with name "{member_name}"'
+            }
         
-        # Confirm removal
-        # (In production, you might want to add a confirmation button)
-        
-        # Remove member
-        result = await tf_api.remove_member(
+        # Change rank
+        return await self.change_member_rank(
             member_id=member['id'],
-            discord_user_id=str(interaction.user.id)
+            new_rank=new_rank,
+            reason=reason,
+            discord_user_id=discord_user_id
         )
-        
-        if result.get('success'):
-            await interaction.followup.send(
-                f"✅ Successfully removed **{member_name}** from the system."
-            )
-        else:
-            await interaction.followup.send(
-                f"❌ Failed to remove member: {result.get('message')}"
-            )
-    
-    async def _handle_log_activity(self, interaction: discord.Interaction, params: dict):
-        """Handle log activity requests"""
-        member_name = params.get('member_name')
-        activity_type = params.get('activity_type')
-        description = params.get('description')
-        
-        if not member_name or not activity_type:
-            await interaction.followup.send(
-                "❌ I need both a member name and an activity type."
-            )
-            return
-        
-        # Find member
-        member = await tf_api.find_member_by_name(member_name)
-        
-        if not member:
-            await interaction.followup.send(
-                f"❌ Could not find member **{member_name}**"
-            )
-            return
-        
-        # Log activity
-        result = await tf_api.log_activity(
-            member_id=member['id'],
-            activity_type=activity_type,
-            description=description or f"{activity_type} logged via Discord",
-            discord_user_id=str(interaction.user.id)
-        )
-        
-        if result.get('success'):
-            activity = result['activity']
-            await interaction.followup.send(
-                f"✅ Logged **{activity_type}** ({activity['points']} points) for **{member_name}**"
-            )
-        else:
-            await interaction.followup.send(
-                f"❌ Failed to log activity: {result.get('message')}"
-            )
 
 
-# Setup function for adding the cog to your bot
-async def setup(bot):
-    await bot.add_cog(TFSystemCog(bot))
-
-
-# Example: Add this to your main bot file
-"""
-# In your main bot.py file:
-
-import discord
-from discord.ext import commands
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
-
-# Create bot
-intents = discord.Intents.default()
-intents.message_content = True
-intents.members = True
-
-bot = commands.Bot(command_prefix="!", intents=intents)
-
-@bot.event
-async def on_ready():
-    print(f'Bot is ready! Logged in as {bot.user}')
-    # Sync commands
-    await bot.tree.sync()
-
-# Load TF System cog
-async def main():
-    async with bot:
-        await bot.load_extension('tf_commands')  # Load this file
-        await bot.start(os.getenv('DISCORD_TOKEN'))
-
+# Example usage in a Discord bot
 if __name__ == '__main__':
     import asyncio
-    asyncio.run(main())
-"""
+    
+    async def example():
+        # Initialize API client
+        api = TFSystemAPI(
+            api_url="http://localhost:5000/api/v1",
+            api_key="your-api-key-here"
+        )
+        
+        # Check system status
+        status = await api.get_status()
+        print(f"System Status: {status}")
+        
+        # Search for a member
+        search_result = await api.search_member("João")
+        print(f"Search Result: {search_result}")
+        
+        # Change rank by name
+        rank_change = await api.change_rank_by_name(
+            member_name="João",
+            new_rank="Commander",
+            reason="Promoted for outstanding performance"
+        )
+        print(f"Rank Change: {rank_change}")
+    
+    # Run example
+    asyncio.run(example())
 
 
 
