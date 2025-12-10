@@ -42,27 +42,6 @@ tf_api = TFSystemAPI(
 )
 
 # Define allowed roles (Commander, Marshal, General)
-ALLOWED_ROLES = ['Commander', 'Marshal', 'General']
-
-
-def has_tf_permissions():
-    """Decorator to check if user has permission to manage TF"""
-    async def predicate(interaction: discord.Interaction):
-        # Check if user has any of the allowed roles
-        user_roles = [role.name for role in interaction.user.roles]
-        has_permission = any(role in ALLOWED_ROLES for role in user_roles)
-        
-        if not has_permission:
-            await interaction.response.send_message(
-                "❌ You don't have permission to use this command. "
-                f"Required roles: {', '.join(ALLOWED_ROLES)}",
-                ephemeral=True
-            )
-        
-        return has_permission
-    
-    return app_commands.check(predicate)
-
 
 async def parse_intent_with_groq(user_message: str) -> dict:
     """
@@ -163,7 +142,6 @@ class TFSystemCog(commands.Cog):
         self.bot = bot
     
     @app_commands.command(name="tf", description="Natural language TF management command")
-    @has_tf_permissions()
     async def tf_command(self, interaction: discord.Interaction, command: str):
         await interaction.response.defer()  # Processing may take a moment
         
@@ -496,6 +474,7 @@ if __name__ == '__main__':
     import asyncio
     asyncio.run(main())
 """
+
 
 
 
