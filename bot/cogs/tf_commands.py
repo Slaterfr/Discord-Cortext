@@ -42,6 +42,52 @@ tf_api = TFSystemAPI(
 )
 
 # Define allowed roles (Commander, Marshal, General)
+ALLOWED_ROLES = ['Commander', 'Marshal', 'General']
+
+
+def has_tf_permissions():
+    """Decorator to check if user has permission to manage TF"""
+    async def predicate(interaction: discord.Interaction):
+        # Check if user has any of the allowed roles
+        user_roles = [role.name for role in interaction.user.roles]
+        has_permission = any(role in ALLOWED_ROLES for role in user_roles)
+        
+        if not has_permission:
+            await interaction.response.send_message(
+                "❌ You don't have permission to use this command. "
+                f"Required roles: {', '.join(ALLOWED_ROLES)}",
+                ephemeral=True
+            )
+        
+        return has_permission
+    
+    return app_commands.check(predicate)
+
+
+def get_user_tf_rank(user: discord.Member) -> str:
+    """
+    Get the user's highest TF rank from their Discord roles.
+    
+    Args:
+        user: Discord member object
+    
+    Returns:
+        str: Highest rank name, or None if no TF rank found
+    """
+    from tf_api_client import RANK_HIERARCHY, get_rank_level
+    
+    user_roles = [role.name for role in user.roles]
+    
+    # Find all TF ranks the user has
+    tf_ranks = [role for role in user_roles if role in RANK_HIERARCHY]
+    
+    if not tf_ranks:
+        return None
+    
+    # Return the highest rank
+    highest_rank = max(tf_ranks, key=get_rank_level)
+    return highest_rank
+
 
 async def parse_intent_with_groq(user_message: str) -> dict:
     """
@@ -142,6 +188,7 @@ class TFSystemCog(commands.Cog):
         self.bot = bot
     
     @app_commands.command(name="tf", description="Natural language TF management command")
+    @has_tf_permissions()
     async def tf_command(self, interaction: discord.Interaction, command: str):
         await interaction.response.defer()  # Processing may take a moment
         
@@ -201,12 +248,22 @@ class TFSystemCog(commands.Cog):
             )
             return
         
+        # Get user's TF rank for permission checking
+        user_rank = get_user_tf_rank(interaction.user)
+        
+        if not user_rank:
+            await interaction.followup.send(
+                "❌ Could not determine your rank. Please contact an administrator."
+            )
+            return
+        
         # Call API to change rank
         result = await tf_api.change_rank_by_name(
             member_name=member_name,
             new_rank=new_rank,
             reason=f"Promoted via Discord by {interaction.user.name}",
-            discord_user_id=str(interaction.user.id)
+            discord_user_id=str(interaction.user.id),
+            user_rank=user_rank
         )
         
         if result.get('success'):
@@ -227,9 +284,16 @@ class TFSystemCog(commands.Cog):
             
             await interaction.followup.send(embed=embed)
         else:
-            await interaction.followup.send(
-                f"❌ Failed to change rank: {result.get('message', 'Unknown error')}"
-            )
+            # Handle permission denied error with clear message
+            error_type = result.get('error', 'unknown')
+            error_message = result.get('message', 'Unknown error')
+            
+            if error_type == 'permission_denied':
+                await interaction.followup.send(f"❌ {error_message}")
+            else:
+                await interaction.followup.send(
+                    f"❌ Failed to change rank: {error_message}"
+                )
     
     async def _handle_get_member_info(self, interaction: discord.Interaction, params: dict):
         """Handle member info requests"""
@@ -474,6 +538,10 @@ if __name__ == '__main__':
     import asyncio
     asyncio.run(main())
 """
+
+
+
+
 
 
 
