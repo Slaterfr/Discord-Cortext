@@ -6,7 +6,7 @@ IMPORTANT: This is example code to help you integrate. Copy these patterns into 
 """
 
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import app_commands
 import os
 from groq import Groq
@@ -186,6 +186,24 @@ class TFSystemCog(commands.Cog):
     
     def __init__(self, bot):
         self.bot = bot
+        self.keep_alive_task.start()
+
+    def cog_unload(self):
+        self.keep_alive_task.cancel()
+    
+    @tasks.loop(minutes=10)
+    async def keep_alive_task(self):
+        """Ping the API to keep it awake"""
+        try:
+            status = await tf_api.get_status()
+            # Optional: Log only if needed to avoid console spam
+            # print(f"[Keep-Alive] Ping result: {status.get('success', False)}")
+        except Exception as e:
+            print(f"[Keep-Alive] Error: {e}")
+
+    @keep_alive_task.before_loop
+    async def before_keep_alive(self):
+        await self.bot.wait_until_ready()
     
     @app_commands.command(name="tf", description="Natural language TF management command")
     @has_tf_permissions()
@@ -543,6 +561,7 @@ if __name__ == '__main__':
     import asyncio
     asyncio.run(main())
 """
+
 
 
 
