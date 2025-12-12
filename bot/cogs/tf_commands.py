@@ -489,10 +489,15 @@ class TFSystemCog(commands.Cog):
         )
         
         if result.get('success'):
-            activity = result['activity']
-            await interaction.followup.send(
-                f"✅ Logged **{activity_type}** ({activity['points']} points) for **{member_name}**"
-            )
+            total_points = result.get('total_points', 0)
+            count = result.get('count', 1)
+            
+            message = f"✅ Logged **{activity_type}**"
+            if count > 1:
+                message += f" (x{count})"
+            message += f" ({total_points} points) for **{member_name}**"
+            
+            await interaction.followup.send(message)
         else:
             await interaction.followup.send(
                 f"❌ Failed to log activity: {result.get('message')}"
@@ -538,6 +543,7 @@ if __name__ == '__main__':
     import asyncio
     asyncio.run(main())
 """
+
 
 
 
