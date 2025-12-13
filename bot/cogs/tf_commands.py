@@ -191,13 +191,13 @@ class TFSystemCog(commands.Cog):
     def cog_unload(self):
         self.keep_alive_task.cancel()
     
-    @tasks.loop(minutes=10)
+    @tasks.loop(minutes=4)
     async def keep_alive_task(self):
         """Ping the API to keep it awake"""
         try:
             status = await tf_api.get_status()
-            # Optional: Log only if needed to avoid console spam
-            # print(f"[Keep-Alive] Ping result: {status.get('success', False)}")
+            # Log to verify it's working
+            print(f"[Keep-Alive] Ping result: {status.get('success', False)}")
         except Exception as e:
             print(f"[Keep-Alive] Error: {e}")
 
@@ -561,6 +561,7 @@ if __name__ == '__main__':
     import asyncio
     asyncio.run(main())
 """
+
 
 
 
