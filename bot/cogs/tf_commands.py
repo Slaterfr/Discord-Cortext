@@ -496,22 +496,30 @@ class TFSystemCog(commands.Cog):
             return
         
         # Log activity
-        result = await tf_api.log_activity(
-            member_id=member['id'],
-            activity_type=activity_type,
-            description=description or f"{activity_type} logged via Discord",
-            discord_user_id=str(handler.user.id)
-        )
-        
-        if result.get('success'):
-            activity = result['activity']
-            await handler.send(
-                f"✅ Logged **{activity_type}** ({activity['points']} points) for **{member_name}**"
+        try:
+            result = await tf_api.log_activity(
+                member_id=member['id'],
+                activity_type=activity_type,
+                description=description or f"{activity_type} logged via Discord",
+                discord_user_id=str(handler.user.id)
             )
-        else:
-            await handler.send(
-                f"❌ Failed to log activity: {result.get('message')}"
-            )
+            
+            if result.get('success'):
+                activity = result.get('activity', {})
+                points = activity.get('points', 0)
+                # Format points (remove .0 if integer)
+                points_str = f"{int(points)}" if isinstance(points, (int, float)) and points == int(points) else f"{points}"
+                
+                await handler.send(
+                    f"✅ Logged **{activity_type}** ({points_str} points) for **{member_name}**"
+                )
+            else:
+                await handler.send(
+                    f"❌ Failed to log activity: {result.get('message', 'Unknown API error')}"
+                )
+        except Exception as e:
+            await handler.send(f"❌ Error processing log response: {str(e)}")
+            print(f"Full result: {locals().get('result', 'No result')}")
 
 
 # Setup function for adding the cog to your bot
@@ -553,6 +561,8 @@ if __name__ == '__main__':
     import asyncio
     asyncio.run(main())
 """
+
+
 
 
 
