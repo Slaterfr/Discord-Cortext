@@ -90,6 +90,7 @@ async def on_ready():
     
     print(f"✓ Bot ready as {bot.user}")
     print(f"✓ Using Groq model: {GROQ_MODEL}")
+    print(f"✓ Message Content Intent: {bot.intents.message_content}")
     print(f"✓ Cooldown: {COOLDOWN_SECONDS}s | Max question length: {MAX_QUESTION_LENGTH} chars")
 
 # Initialize TF System API
@@ -207,8 +208,43 @@ async def help_command(interaction: discord.Interaction):
     
     embed.set_footer(text="Powered by Groq")
     
+    embed.set_footer(text="Powered by Groq")
+    
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
+
+@bot.tree.command(name="debug", description="Check bot diagnostics")
+async def debug_command(interaction: discord.Interaction):
+    """Check bot health and intents."""
+    
+    # Check permissions (view channel, etc) of the bot in this channel
+    permissions = interaction.channel.permissions_for(interaction.guild.me)
+    
+    status_msg = (
+        f"**Diagnostic Report**\n"
+        f"✅ Bot is Online\n"
+        f"📡 **Intents**:\n"
+        f" - Message Content: `{bot.intents.message_content}` (Must be True)\n"
+        f" - Members: `{bot.intents.members}`\n"
+        f"👀 **Channel Permissions**:\n"
+        f" - View Channel: `{permissions.view_channel}`\n"
+        f" - Read Message History: `{permissions.read_message_history}`\n"
+        f" - Send Messages: `{permissions.send_messages}`\n"
+    )
+    
+    await interaction.response.send_message(status_msg, ephemeral=True)
+
+
+@bot.event
+async def on_message(message):
+    # Debug info
+    if message.author == bot.user:
+        return
+        
+    print(f"ROOT DEBUG: Message from {message.author} in {message.channel}: {message.content}", flush=True)
+    
+    # Process commands needed if using message commands too
+    await bot.process_commands(message)
 
 @bot.event
 async def on_error(event, *args, **kwargs):
@@ -227,6 +263,8 @@ if __name__ == "__main__":
     
     print("🚀 Starting bot...")
     bot.run(DISCORD_TOKEN)
+
+
 
 
 
