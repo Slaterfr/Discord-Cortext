@@ -125,6 +125,7 @@ Respond ONLY with a JSON object in this format:
 If you can't parse the command, set action to "unknown" and explain in a "reason" field."""
 
     try:
+        print(f"[DEBUG] Sending to Groq: '{user_message}'")
         completion = groq_client.chat.completions.create(
             model=GROQ_MODEL,  # Use model from environment variable
             messages=[
@@ -136,6 +137,7 @@ If you can't parse the command, set action to "unknown" and explain in a "reason
         )
         
         response_text = completion.choices[0].message.content
+        print(f"[DEBUG] Raw Groq response: {response_text}")
         
         # Extract JSON from response (in case there's extra text)
         json_start = response_text.find('{')
@@ -193,10 +195,16 @@ class TFSystemCog(commands.Cog):
         if message.author == self.bot.user:
             return
 
+        # Debug print to see if we're getting any messages
+        print(f"[DEBUG] Message received from {message.author}: {message.content}")
+
         # Check if bot is mentioned
         if self.bot.user.mentioned_in(message) and not message.mention_everyone:
+            print(f"[DEBUG] Bot mentioned in message: {message.content}")
+            
             # Check permissions
             if not self.check_permissions(message.author):
+                print(f"[DEBUG] User {message.author} denied permission")
                 await message.channel.send(
                     f"❌ You don't have permission to use this command. "
                     f"Required roles: {', '.join(ALLOWED_ROLES)}"
@@ -207,6 +215,8 @@ class TFSystemCog(commands.Cog):
             content = message.content.replace(f'<@{self.bot.user.id}>', '').strip()
             # Also handle nickname mentions if any
             content = content.replace(f'<@!{self.bot.user.id}>', '').strip()
+            
+            print(f"[DEBUG] Processing command content: {content}")
 
             if not content:
                 await message.channel.send("👋 Hello! How can I help you with the Taskforce System?")
@@ -561,6 +571,8 @@ if __name__ == '__main__':
     import asyncio
     asyncio.run(main())
 """
+
+
 
 
 
