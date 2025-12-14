@@ -26,7 +26,9 @@ MAX_QUESTION_LENGTH = int(os.getenv("MAX_QUESTION_LENGTH", "500"))
 client = Groq(api_key=GROQ_API_KEY)
 
 # Discord bot setup
+# Discord bot setup
 intents = discord.Intents.default()
+intents.message_content = True  # Required for on_message and mentions
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # Rate limiting tracker
@@ -225,5 +227,6 @@ if __name__ == "__main__":
     
     print("🚀 Starting bot...")
     bot.run(DISCORD_TOKEN)
+
 
 
