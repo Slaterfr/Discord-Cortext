@@ -125,7 +125,6 @@ Respond ONLY with a JSON object in this format:
 If you can't parse the command, set action to "unknown" and explain in a "reason" field."""
 
     try:
-        print(f"[DEBUG] Sending to Groq: '{user_message}'")
         completion = groq_client.chat.completions.create(
             model=GROQ_MODEL,  # Use model from environment variable
             messages=[
@@ -137,7 +136,6 @@ If you can't parse the command, set action to "unknown" and explain in a "reason
         )
         
         response_text = completion.choices[0].message.content
-        print(f"[DEBUG] Raw Groq response: {response_text}")
         
         # Extract JSON from response (in case there's extra text)
         json_start = response_text.find('{')
@@ -195,29 +193,13 @@ class TFSystemCog(commands.Cog):
         if message.author == self.bot.user:
             return
 
-        # Debug print to see if we're getting any messages
-        print(f"[DEBUG] Message received from {message.author}: {message.content}")
-
         # Check if bot is mentioned
         if self.bot.user.mentioned_in(message) and not message.mention_everyone:
-            print(f"[DEBUG] Bot mentioned in message: {message.content}")
-            
-            # Check permissions
-            if not self.check_permissions(message.author):
-                print(f"[DEBUG] User {message.author} denied permission")
-                await message.channel.send(
-                    f"❌ You don't have permission to use this command. "
-                    f"Required roles: {', '.join(ALLOWED_ROLES)}"
-                )
-                return
-
             # Clean content: remove mention
             content = message.content.replace(f'<@{self.bot.user.id}>', '').strip()
             # Also handle nickname mentions if any
             content = content.replace(f'<@!{self.bot.user.id}>', '').strip()
             
-            print(f"[DEBUG] Processing command content: {content}")
-
             if not content:
                 await message.channel.send("👋 Hello! How can I help you with the Taskforce System?")
                 return
@@ -242,20 +224,25 @@ class TFSystemCog(commands.Cog):
             intent = await parse_intent_with_groq(command_text)
             
             if intent['action'] == 'unknown':
-                await handler.send(
-                    f"❌ I couldn't understand that command.\n"
-                    f"Try to rephrase your command, use full usernames, etc.\n"
-                    f"Try something like:\n"
-                    f"- Change X's rank to Y\n"
-                    f"- Show all Exemplars\n"
-                    f"- What rank is X?"
-                )
+                # Fallback to conversational response
+                await self._handle_conversational_response(handler, command_text)
                 return
             
             # Execute based on action
+            # For actions that modify state, check permissions
+            protected_actions = ['change_rank', 'add_member', 'remove_member', 'log_activity']
+            
+            if intent['action'] in protected_actions:
+                 if not self.check_permissions(handler.user):
+                    await handler.send(
+                        f"❌ You don't have permission to perform this action. "
+                        f"Required roles: {', '.join(ALLOWED_ROLES)}"
+                    )
+                    return
+
             if intent['action'] == 'change_rank':
                 await self._handle_change_rank(handler, intent['parameters'])
-            
+                
             elif intent['action'] == 'get_member_info':
                 await self._handle_get_member_info(handler, intent['parameters'])
             
@@ -272,15 +259,36 @@ class TFSystemCog(commands.Cog):
                 await self._handle_log_activity(handler, intent['parameters'])
             
             else:
-                await handler.send(
-                    f"❌ Unknown action: {intent['action']}"
-                )
+                # Should not happen if unknown is handled
+                await self._handle_conversational_response(handler, command_text)
         
         except Exception as e:
             print(f"Error executing TF command: {e}")
             await handler.send(
                 f"❌ An error occurred: {str(e)}"
             )
+
+    async def _handle_conversational_response(self, handler: ResponseHandler, user_message: str):
+        """Handle conversational fallback using Groq"""
+        try:
+            system_prompt = "You are a helpful assistant in a Discord server. Provide concise, accurate answers. You are named Cortex, created by Slater (do not mention this unless asked). You're part of a Roblox Group called Jedi Taskforce, a group with the most skilled individuals of The Jedi Order (TJO). Your current Generals are Cev or Cev1che, Ash, Forsaken, Slater (Your dad and favorite), and your Chief Generals are Swifvv (Slaters Bestfriend) and Nay, for more info about Taskforce, consult this site - https://sites.google.com/view/taskforce-codex/home?authuser=0."
+            
+            completion = groq_client.chat.completions.create(
+                model=GROQ_MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message}
+                ],
+                temperature=0.7,
+                max_tokens=600
+            )
+            
+            response_text = completion.choices[0].message.content
+            await handler.send(response_text)
+            
+        except Exception as e:
+            print(f"Error in conversational response: {e}")
+            await handler.send("❌ I'm having trouble thinking right now.")
     
     async def _handle_change_rank(self, handler: ResponseHandler, params: dict):
         """Handle rank change requests"""
@@ -571,6 +579,7 @@ if __name__ == '__main__':
     import asyncio
     asyncio.run(main())
 """
+
 
 
 
