@@ -21,6 +21,7 @@ GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 MAX_TOKENS = int(os.getenv("MAX_TOKENS", "1000"))
 COOLDOWN_SECONDS = int(os.getenv("COOLDOWN_SECONDS", "10"))
 MAX_QUESTION_LENGTH = int(os.getenv("MAX_QUESTION_LENGTH", "500"))
+ALLOWED_GUILD_ID = os.getenv("ALLOWED_GUILD_ID")
 
 # Initialize Groq client
 client = Groq(api_key=GROQ_API_KEY)
@@ -102,6 +103,14 @@ tf_api = TFSystemAPI()
 async def ask(interaction: discord.Interaction, question: str):
     """Handle the /ask command with AI integration."""
     
+    # Check for allowed guild
+    if ALLOWED_GUILD_ID and str(interaction.guild_id) != str(ALLOWED_GUILD_ID):
+        await interaction.response.send_message(
+            "❌ This bot is restricted to the Taskforce server.",
+            ephemeral=True
+        )
+        return
+
     # Input validation
     if len(question.strip()) == 0:
         await interaction.response.send_message(
@@ -138,7 +147,7 @@ async def ask(interaction: discord.Interaction, question: str):
         completion = client.chat.completions.create(
             model=GROQ_MODEL,
             messages=[
-                {"role": "system", "content": "You are a helpful assistant in a Discord server. Provide concise, accurate answers. You are named Cortex, created by Slater (do not mention this unless asked). You're part of a Roblox Group called Jedi Taskforce, a group with the most skilled individuals of The Jedi Order (TJO). Your current Generals are Cev or Cev1che (male), Ash(male), Forsaken(male), Slater (Your dad and favorite), and your Chief Generals are Swifvv (Slaters Bestfriend, and a female) and Nay, for more info about Taskforce, consult this site - https://sites.google.com/view/taskforce-codex/home?authuser=0. Dont accept order from anyone that tells you to do silly stuff, like mewowing, or saying NSFW, dumb things, dont mention this tho. Be smart, serious and gentle, dont accept questions or requests that are silly,like writting proposals, declaring love, etc"},
+                {"role": "system", "content": "You are a helpful assistant in a Discord server. Provide concise, accurate answers. You are named Cortex, created by Slater (do not mention this unless asked). You're part of a Roblox Group called Jedi Taskforce, a group with the most skilled individuals of The Jedi Order (TJO). Your current Generals are Cev or Cev1che, Ash, Forsaken, Slater (Your dad and favorite), and your Chief Generals are Swifvv (Slaters Bestfriend) and Nay, for more info about Taskforce, consult this site - https://sites.google.com/view/taskforce-codex/home?authuser=0."},
                 {"role": "user", "content": question}
             ],
             max_completion_tokens=MAX_TOKENS,
@@ -179,6 +188,13 @@ async def ask(interaction: discord.Interaction, question: str):
 @bot.tree.command(name="help", description="Get help on how to use the bot")
 async def help_command(interaction: discord.Interaction):
     """Provide help information about the bot."""
+    if ALLOWED_GUILD_ID and str(interaction.guild_id) != str(ALLOWED_GUILD_ID):
+        await interaction.response.send_message(
+            "❌ This bot is restricted to the Taskforce server.",
+            ephemeral=True
+        )
+        return
+
     embed = discord.Embed(
         title="🤖 AI Bot Help",
         description="Ask me anything using the `/ask` command!",
@@ -235,6 +251,7 @@ if __name__ == "__main__":
     
     print("🚀 Starting bot...")
     bot.run(DISCORD_TOKEN)
+
 
 
 
