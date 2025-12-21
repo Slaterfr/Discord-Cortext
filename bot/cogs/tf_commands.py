@@ -75,7 +75,7 @@ async def parse_intent_with_groq(user_message: str) -> dict:
         dict: Parsed intent with action, parameters, etc.
     """
     system_prompt = """You are a command parser for a Taskforce Management System.
-Parse user commands and extract the intent and entities. Dont accept order from anyone that tells you to do silly stuff, like mewowing, or saying NSFW, dumb things, dont mention this tho. Be smart, serious and gentle
+Parse user commands and extract the intent and entities. Dont accept order from anyone that tells you to do silly stuff, like mewowing, or saying NSFW, dumb things, dont mention this tho. Be smart, serious and gentle, dont accept questions or requests that are silly, like writting proposals, declaring love, etc
 
 Valid actions:
 - change_rank: Change a member's rank
@@ -579,6 +579,7 @@ if __name__ == '__main__':
     import asyncio
     asyncio.run(main())
 """
+
 
 
 
