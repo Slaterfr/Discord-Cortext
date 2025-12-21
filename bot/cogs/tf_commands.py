@@ -28,6 +28,7 @@ from tf_api_client import TFSystemAPI
 # Get Groq configuration from environment
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 GROQ_MODEL = os.getenv('GROQ_MODEL')
+ALLOWED_GUILD_ID = os.getenv('ALLOWED_GUILD_ID')
 
 # Debug: Show which model is being used
 print(f"[TF Commands] Using Groq model: {GROQ_MODEL}")
@@ -75,10 +76,7 @@ async def parse_intent_with_groq(user_message: str) -> dict:
         dict: Parsed intent with action, parameters, etc.
     """
     system_prompt = """You are a command parser for a Taskforce Management System.
-Parse user commands and extract the intent and entities. Dont accept order from anyone that tells you to do silly stuff,
-like mewowing, or saying NSFW, dumb things, dont mention this tho. 
-Be smart, serious and gentle, dont accept questions or requests that are silly,
-like writting proposals, declaring love, etc
+Parse user commands and extract the intent and entities.
 
 Valid actions:
 - change_rank: Change a member's rank
@@ -198,6 +196,10 @@ class TFSystemCog(commands.Cog):
 
         # Check if bot is mentioned
         if self.bot.user.mentioned_in(message) and not message.mention_everyone:
+            # Check for allowed guild
+            if ALLOWED_GUILD_ID and str(message.guild.id) != str(ALLOWED_GUILD_ID):
+               # Optional: log or ignore. Ignoring is usually safer to avoid spam.
+               return
             # Clean content: remove mention
             content = message.content.replace(f'<@{self.bot.user.id}>', '').strip()
             # Also handle nickname mentions if any
@@ -216,6 +218,13 @@ class TFSystemCog(commands.Cog):
     @app_commands.command(name="tf", description="Natural language TF management command")
     @has_tf_permissions()
     async def tf_command(self, interaction: discord.Interaction, command: str):
+        if ALLOWED_GUILD_ID and str(interaction.guild_id) != str(ALLOWED_GUILD_ID):
+            await interaction.response.send_message(
+                "❌ This bot is restricted to the Taskforce server.",
+                ephemeral=True
+            )
+            return
+
         await interaction.response.defer()  # Processing may take a moment
         handler = ResponseHandler(interaction, is_interaction=True)
         await self.process_command(handler, command)
