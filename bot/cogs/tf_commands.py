@@ -42,8 +42,8 @@ tf_api = TFSystemAPI(
     api_key=os.getenv('TF_SYSTEM_API_KEY')
 )
 
-# Define allowed roles (Commander, Marshal, General)
-ALLOWED_ROLES = ['Commander', 'Marshal', 'General']
+# Define allowed roles
+ALLOWED_ROLES = ['Prospect', 'Commander', 'Marshal', 'General']
 
 
 def has_tf_permissions():
@@ -591,6 +591,7 @@ if __name__ == '__main__':
     import asyncio
     asyncio.run(main())
 """
+
 
 
 
