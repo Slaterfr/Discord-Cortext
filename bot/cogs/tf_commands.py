@@ -103,9 +103,11 @@ IMPORTANT: Recognize these variations for listing members:
 Note: Always use SINGULAR form of rank names (General, not Generals; Commander, not Commanders)
 
 CRITICAL: Activity Type Spelling
-- "cancelled training" or "canceled training" -> MUST map to "Canceled Training" (one L)
-- "cancelled tryout" or "canceled tryout" -> MUST map to "Cancelled Tryout" (two Ls)
-- This is extremely important for the database to recognize the activity.
+- "cancelled training" or "canceled training" -> MUST map to ONLY "Canceled Training" (one L)
+- "cancelled tryout" or "canceled tryout" -> MUST map to ONLY "Cancelled Tryout" (two Ls)
+- This is extremely important for the database to recognize the activity. 
+- When asked to log a cancelled training or a cancelled tryout, similar to this - "log a canceled training for X", you must ONLY registed a cancelled type of event, not also the normal type of event, 
+ when asked a normal event like a training without the "cancelled at first", log only a normal kind of that training
 
 Examples of correct parsing:
 1. "show all generals" -> {"action": "list_members", "parameters": {"rank": "General"}}
@@ -599,6 +601,7 @@ if __name__ == '__main__':
     import asyncio
     asyncio.run(main())
 """
+
 
 
 
