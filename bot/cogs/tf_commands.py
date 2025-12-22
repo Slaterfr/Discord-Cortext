@@ -42,8 +42,8 @@ tf_api = TFSystemAPI(
     api_key=os.getenv('TF_SYSTEM_API_KEY')
 )
 
-# Define allowed roles
-ALLOWED_ROLES = ['Prospect', 'Commander', 'Marshal', 'General']
+# Define allowed roles (Commander, Marshal, General)
+ALLOWED_ROLES = ['Commander', 'Marshal', 'General']
 
 
 def has_tf_permissions():
@@ -87,7 +87,7 @@ Valid actions:
 - log_activity: Log an activity for a member
 
 Valid ranks: Aspirant, Novice, Adept, Crusader, Paladin, Exemplar, Prospect, Commander, Marshal, General, Chief General
-Valid activity types: Raid, Patrol, Training, Mission, Tryout
+Valid activity types: Raid, Patrol, Training, Mission, Tryout, Canceled Training, Cancelled Tryout
 
 IMPORTANT: Recognize these variations for listing members:
 - "show all members" -> list_members with no rank filter
@@ -102,6 +102,11 @@ IMPORTANT: Recognize these variations for listing members:
 
 Note: Always use SINGULAR form of rank names (General, not Generals; Commander, not Commanders)
 
+CRITICAL: Activity Type Spelling
+- "cancelled training" or "canceled training" -> MUST map to "Canceled Training" (one L)
+- "cancelled tryout" or "canceled tryout" -> MUST map to "Cancelled Tryout" (two Ls)
+- This is extremely important for the database to recognize the activity.
+
 Examples of correct parsing:
 1. "show all generals" -> {"action": "list_members", "parameters": {"rank": "General"}}
 2. "list all commanders" -> {"action": "list_members", "parameters": {"rank": "Commander"}}
@@ -109,6 +114,9 @@ Examples of correct parsing:
 4. "list everyone" -> {"action": "list_members", "parameters": {}}
 5. "change John to Commander" -> {"action": "change_rank", "parameters": {"member_name": "John", "new_rank": "Commander"}}
 6. "what rank is Sarah?" -> {"action": "get_member_info", "parameters": {"member_name": "Sarah"}}
+7. "log a cancelled training for Clicky" -> {"action": "log_activity", "parameters": {"member_name": "Clicky", "activity_type": "Canceled Training"}}
+8. "log a canceled training for Bob" -> {"action": "log_activity", "parameters": {"member_name": "Bob", "activity_type": "Canceled Training"}}
+9. "log a cancelled tryout for Steve" -> {"action": "log_activity", "parameters": {"member_name": "Steve", "activity_type": "Cancelled Tryout"}}
 
 Respond ONLY with a JSON object in this format:
 {
@@ -591,6 +599,7 @@ if __name__ == '__main__':
     import asyncio
     asyncio.run(main())
 """
+
 
 
 
