@@ -108,6 +108,7 @@ CRITICAL: Activity Type Spelling
 - This is extremely important for the database to recognize the activity. 
 - When asked to log a cancelled training or a cancelled tryout, similar to this - "log a canceled training for X", you must ONLY registed a cancelled type of event, not also the normal type of event, 
  when asked a normal event like a training without the "cancelled at first", log only a normal kind of that training
+- Also, you may interpret "Cancelled event, cancelled raid, cancelled patrol, etc" with one or two L's as "Cancelled Training".
 
 Examples of correct parsing:
 1. "show all generals" -> {"action": "list_members", "parameters": {"rank": "General"}}
@@ -601,6 +602,7 @@ if __name__ == '__main__':
     import asyncio
     asyncio.run(main())
 """
+
 
 
 
