@@ -43,7 +43,7 @@ tf_api = TFSystemAPI(
 )
 
 # Define allowed roles (Commander, Marshal, General)
-ALLOWED_ROLES = ['Commander', 'Marshal', 'General']
+ALLOWED_ROLES = ['Prospect', 'Commander', 'Marshal', 'General']
 
 
 def has_tf_permissions():
@@ -106,9 +106,9 @@ CRITICAL: Activity Type Spelling
 - "cancelled training" or "canceled training" -> MUST map to ONLY "Canceled Training" (one L)
 - "cancelled tryout" or "canceled tryout" -> MUST map to ONLY "Cancelled Tryout" (two Ls)
 - This is extremely important for the database to recognize the activity. 
-- When asked to log a cancelled training or a cancelled tryout, similar to this - "log a canceled training for X", you must ONLY registed a cancelled type of event, not also the normal type of event, 
- when asked a normal event like a training without the "cancelled at first", log only a normal kind of that training
-- Also, you may interpret "Cancelled event, cancelled raid, cancelled patrol, etc" with one or two L's as "Cancelled Training".
+- When asked to log a cancelled training or a cancelled tryout, similar to this - "log a canceled training for X", "log a cancelled tryout for Y", you must ONLY registed a cancelled type of event, not also the normal type of event, 
+ when asked a normal event like a training without the "cancelled" at first, log only a normal kind of that training
+- Also, you may interpret "Cancelled event, cancelled raid, cancelled patrol, etc" with one or two L's as "Cancelled Training", and Cancelled tryout or Canceled Tryout as "Canceleld tryout"
 
 Examples of correct parsing:
 1. "show all generals" -> {"action": "list_members", "parameters": {"rank": "General"}}
@@ -602,6 +602,7 @@ if __name__ == '__main__':
     import asyncio
     asyncio.run(main())
 """
+
 
 
 
