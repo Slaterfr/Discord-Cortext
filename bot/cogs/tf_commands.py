@@ -245,7 +245,7 @@ class TFSystemCog(commands.Cog):
             
             if intent['action'] == 'unknown':
                 # Just return a simple error message instead of chatting
-                await handler.send("❌ I didn't understand that command. Try `/help` to see what I can do.")
+                await handler.send("❌ I didn't understand that command. Try rephrasing you request, or contacting a General for support.")
                 return
             
             # Execute based on action
@@ -579,6 +579,7 @@ if __name__ == '__main__':
     import asyncio
     asyncio.run(main())
 """
+
 
 
 
