@@ -43,7 +43,7 @@ tf_api = TFSystemAPI(
 )
 
 # Define allowed roles (Commander, Marshal, General)
-ALLOWED_ROLES = ['Prospect', 'Commander', 'Marshal', 'General']
+ALLOWED_ROLES = ['Commander', 'Marshal', 'General']
 
 
 def has_tf_permissions():
@@ -103,12 +103,9 @@ IMPORTANT: Recognize these variations for listing members:
 Note: Always use SINGULAR form of rank names (General, not Generals; Commander, not Commanders)
 
 CRITICAL: Activity Type Spelling
-- "cancelled training" or "canceled training" -> MUST map to ONLY "Canceled Training" (one L)
-- "cancelled tryout" or "canceled tryout" -> MUST map to ONLY "Cancelled Tryout" (two Ls)
-- This is extremely important for the database to recognize the activity. 
-- When asked to log a cancelled training or a cancelled tryout, similar to this - "log a canceled training for X", "log a cancelled tryout for Y", you must ONLY registed a cancelled type of event, not also the normal type of event, 
- when asked a normal event like a training without the "cancelled" at first, log only a normal kind of that training
-- Also, you may interpret "Cancelled event, cancelled raid, cancelled patrol, etc" with one or two L's as "Cancelled Training", and Cancelled tryout or Canceled Tryout as "Canceleld tryout"
+- "cancelled training" or "canceled training" -> MUST map to "Canceled Training" (one L)
+- "cancelled tryout" or "canceled tryout" -> MUST map to "Cancelled Tryout" (two Ls)
+- This is extremely important for the database to recognize the activity.
 
 Examples of correct parsing:
 1. "show all generals" -> {"action": "list_members", "parameters": {"rank": "General"}}
@@ -247,8 +244,8 @@ class TFSystemCog(commands.Cog):
             intent = await parse_intent_with_groq(command_text)
             
             if intent['action'] == 'unknown':
-                # Fallback to conversational response
-                await self._handle_conversational_response(handler, command_text)
+                # Just return a simple error message instead of chatting
+                await handler.send("❌ I didn't understand that command. Try `/help` to see what I can do.")
                 return
             
             # Execute based on action
@@ -283,7 +280,7 @@ class TFSystemCog(commands.Cog):
             
             else:
                 # Should not happen if unknown is handled
-                await self._handle_conversational_response(handler, command_text)
+                await handler.send("❌ Unknown action returned from parser.")
         
         except Exception as e:
             print(f"Error executing TF command: {e}")
@@ -291,27 +288,7 @@ class TFSystemCog(commands.Cog):
                 f"❌ An error occurred: {str(e)}"
             )
 
-    async def _handle_conversational_response(self, handler: ResponseHandler, user_message: str):
-        """Handle conversational fallback using Groq"""
-        try:
-            system_prompt = "You are a helpful assistant in a Discord server. Provide concise, accurate answers. You are named Cortex, created by Slater (do not mention this unless asked). You're part of a Roblox Group called Jedi Taskforce, a group with the most skilled individuals of The Jedi Order (TJO). Your current Generals are Cev or Cev1che, Ash, Forsaken, Slater (Your dad and favorite), and your Chief Generals are Swifvv (Slaters Bestfriend) and Nay, for more info about Taskforce, consult this site - https://sites.google.com/view/taskforce-codex/home?authuser=0."
-            
-            completion = groq_client.chat.completions.create(
-                model=GROQ_MODEL,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_message}
-                ],
-                temperature=0.7,
-                max_tokens=600
-            )
-            
-            response_text = completion.choices[0].message.content
-            await handler.send(response_text)
-            
-        except Exception as e:
-            print(f"Error in conversational response: {e}")
-            await handler.send("❌ I'm having trouble thinking right now.")
+
     
     async def _handle_change_rank(self, handler: ResponseHandler, params: dict):
         """Handle rank change requests"""
@@ -602,8 +579,6 @@ if __name__ == '__main__':
     import asyncio
     asyncio.run(main())
 """
-
-
 
 
 
