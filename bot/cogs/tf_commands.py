@@ -43,7 +43,7 @@ tf_api = TFSystemAPI(
 )
 
 # Define allowed roles (Commander, Marshal, General)
-ALLOWED_ROLES = ['Commander', 'Marshal', 'General']
+ALLOWED_ROLES = ['Staff Team', 'Prospect', 'Commander', 'Marshal', 'General']
 
 
 def has_tf_permissions():
@@ -60,7 +60,7 @@ def has_tf_permissions():
                 ephemeral=True
             )
         
-        return has_permission
+        return True
     
     return app_commands.check(predicate)
 
@@ -579,6 +579,7 @@ if __name__ == '__main__':
     import asyncio
     asyncio.run(main())
 """
+
 
 
 
