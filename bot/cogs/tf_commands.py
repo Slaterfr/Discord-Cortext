@@ -1,8 +1,6 @@
 """
-Example Discord Bot Commands for TF System Integration
-This shows how to integrate the TF API client with discord.py and Groq AI
+Discord Bot Commands for TF System Integration
 
-IMPORTANT: This is example code to help you integrate. Copy these patterns into your bot.
 """
 
 import discord
@@ -579,6 +577,7 @@ if __name__ == '__main__':
     import asyncio
     asyncio.run(main())
 """
+
 
 
 
