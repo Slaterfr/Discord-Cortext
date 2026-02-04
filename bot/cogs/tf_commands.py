@@ -103,7 +103,9 @@ Note: Always use SINGULAR form of rank names (General, not Generals; Commander, 
 CRITICAL: Activity Type Spelling
 - "cancelled training" or "canceled training" -> MUST map to "Canceled Training" (one L)
 - "cancelled tryout" or "canceled tryout" -> MUST map to "Cancelled Tryout" (two Ls)
+- You should also consider "cancelled" or "cancelled event" to map to "Canceled Training"
 - This is extremely important for the database to recognize the activity.
+
 
 Examples of correct parsing:
 1. "show all generals" -> {"action": "list_members", "parameters": {"rank": "General"}}
