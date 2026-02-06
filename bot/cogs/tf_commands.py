@@ -492,7 +492,7 @@ class TFSystemCog(commands.Cog):
                 f"❌ Failed to remove member: {result.get('message')}"
             )
     
-    async def _handle_log_activity(self, handler: ResponseHandler, params: dict):
+     async def _handle_log_activity(self, handler: ResponseHandler, params: dict):
         """Handle log activity requests"""
         member_name = params.get('member_name')
         activity_type = params.get('activity_type')
@@ -528,8 +528,17 @@ class TFSystemCog(commands.Cog):
                 # Format points (remove .0 if integer)
                 points_str = f"{int(points)}" if isinstance(points, (int, float)) and points == int(points) else f"{points}"
                 
+                # Get quota progress information
+                quota_progress = result.get('quota_progress', {})
+                total_points = quota_progress.get('total_points', 0)
+                quota = quota_progress.get('quota', 0)
+                
+                # Format total_points and quota (remove .0 if integer)
+                total_str = f"{int(total_points)}" if isinstance(total_points, (int, float)) and total_points == int(total_points) else f"{total_points}"
+                quota_str = f"{int(quota)}" if isinstance(quota, (int, float)) and quota == int(quota) else f"{quota}"
+                
                 await handler.send(
-                    f"✅ Logged **{activity_type}** ({points_str} points) for **{member_name}**"
+                    f"✅ Logged {activity_type} ({points_str} pts) for **{member_name}**, they now have {total_str}/{quota_str} points."
                 )
             else:
                 await handler.send(
@@ -538,7 +547,6 @@ class TFSystemCog(commands.Cog):
         except Exception as e:
             await handler.send(f"❌ Error processing log response: {str(e)}")
             print(f"Full result: {locals().get('result', 'No result')}")
-
 
 # Setup function for adding the cog to your bot
 async def setup(bot):
