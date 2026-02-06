@@ -492,7 +492,7 @@ class TFSystemCog(commands.Cog):
                 f"❌ Failed to remove member: {result.get('message')}"
             )
     
-     async def _handle_log_activity(self, handler: ResponseHandler, params: dict):
+    async def _handle_log_activity(self, handler: ResponseHandler, params: dict):
         """Handle log activity requests"""
         member_name = params.get('member_name')
         activity_type = params.get('activity_type')
@@ -587,6 +587,7 @@ if __name__ == '__main__':
     import asyncio
     asyncio.run(main())
 """
+
 
 
 
