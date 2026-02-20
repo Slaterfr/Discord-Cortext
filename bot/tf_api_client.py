@@ -4,79 +4,8 @@ This module provides an easy-to-use Python client for interacting with TF_System
 
 import aiohttp
 import os
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List
 from datetime import datetime
-
-
-# Rank hierarchy (lower number = lower rank)
-RANK_HIERARCHY = {
-    'Aspirant': 1,
-    'Novice': 2,
-    'Adept': 3,
-    'Crusader': 4,
-    'Paladin': 5,
-    'Exemplar': 6,
-    'Prospect': 7,
-    'Commander': 8,
-    'Marshal': 9,
-    'General': 10,
-    'Chief General': 11
-}
-
-
-def get_rank_level(rank_name: str) -> int:
-    """
-    Get the hierarchy level of a rank.
-    
-    Args:
-        rank_name: Name of the rank
-    
-    Returns:
-        int: Hierarchy level (1-11), or 0 if rank is unknown
-    """
-    return RANK_HIERARCHY.get(rank_name, 0)
-
-
-def can_modify_rank(user_rank: str, target_rank: str, target_member_id: int = None, user_member_id: int = None) -> Tuple[bool, str]:
-    """
-    Check if a user has permission to modify a target member's rank.
-    
-    Rules:
-    - Users can only change ranks of members below their own rank
-    - Users cannot change their own rank
-    - Users cannot change ranks of members at the same level or higher
-    
-    Args:
-        user_rank: The rank of the user attempting the change
-        target_rank: The current rank of the target member
-        target_member_id: Optional member ID of target (for self-check)
-        user_member_id: Optional member ID of user (for self-check)
-    
-    Returns:
-        tuple: (can_modify: bool, reason: str)
-    """
-    # Check if trying to modify own rank
-    if target_member_id and user_member_id and target_member_id == user_member_id:
-        return False, "You cannot change your own rank."
-    
-    user_level = get_rank_level(user_rank)
-    target_level = get_rank_level(target_rank)
-    
-    # Unknown rank check
-    if user_level == 0:
-        return False, f"Unknown user rank: {user_rank}"
-    if target_level == 0:
-        return False, f"Unknown target rank: {target_rank}"
-    
-    # Permission check: user must be higher rank than target
-    if user_level <= target_level:
-        return False, (
-            f"You don't have permission to change this member's rank. "
-            f"The target is a **{target_rank}** and you are a **{user_rank}**. "
-            f"You can only change ranks of members below your level."
-        )
-    
-    return True, "Permission granted"
 
 
 class TFSystemAPI:
@@ -343,6 +272,23 @@ class TFSystemAPI:
         
         return await self._request('POST', '/activity', json=data)
     
+    async def remove_activity(self, activity_id: int, discord_user_id: str = None) -> Dict:
+        """
+        Remove an activity entry
+        
+        Args:
+            activity_id: Activity ID to remove
+            discord_user_id: Discord user ID who is removing the activity
+        
+        Returns:
+            dict: Remove activity result with updated quota progress
+        """
+        data = {}
+        if discord_user_id:
+            data['discord_user_id'] = discord_user_id
+        
+        return await self._request('DELETE', f'/activity/{activity_id}', json=data)
+    
     async def get_member_activities(self, member_id: int, limit: int = 20) -> Dict:
         """
         Get activities for a specific member
@@ -356,6 +302,18 @@ class TFSystemAPI:
         """
         params = {'limit': limit}
         return await self._request('GET', f'/members/{member_id}/activities', params=params)
+    
+    async def get_member_points(self, member_id: int) -> Dict:
+        """
+        Get a member's current AC points and quota progress
+        
+        Args:
+            member_id: Member ID
+        
+        Returns:
+            dict: Member's current points and quota information
+        """
+        return await self._request('GET', f'/members/{member_id}/points')
     
     # ========================================
     # HELPER METHODS
@@ -379,8 +337,7 @@ class TFSystemAPI:
         return None
     
     async def change_rank_by_name(self, member_name: str, new_rank: str,
-                                   reason: str = None, discord_user_id: str = None,
-                                   user_rank: str = None) -> Dict:
+                                   reason: str = None, discord_user_id: str = None) -> Dict:
         """
         Change a member's rank by name (convenience method)
         
@@ -389,7 +346,6 @@ class TFSystemAPI:
             new_rank: New rank name
             reason: Reason for rank change
             discord_user_id: Discord user ID who made the change
-            user_rank: Rank of the user making the change (for permission checking)
         
         Returns:
             dict: Rank change result
@@ -403,20 +359,6 @@ class TFSystemAPI:
                 'error': 'member_not_found',
                 'message': f'Could not find member with name "{member_name}"'
             }
-        
-        # Check permissions if user_rank is provided
-        if user_rank:
-            can_modify, reason_msg = can_modify_rank(
-                user_rank=user_rank,
-                target_rank=member['current_rank']
-            )
-            
-            if not can_modify:
-                return {
-                    'success': False,
-                    'error': 'permission_denied',
-                    'message': reason_msg
-                }
         
         # Change rank
         return await self.change_member_rank(
@@ -456,6 +398,3 @@ if __name__ == '__main__':
     
     # Run example
     asyncio.run(example())
-
-
-
