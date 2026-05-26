@@ -56,7 +56,7 @@ class MissionTracker(commands.Cog):
         }
     
     @commands.hybrid_command(name="sync_missions", description="Sync mission completions from a date range")
-    @commands.has_permissions(administrator=True)
+    @commands.has_role(729817672585314305)
     async def sync_missions(self, ctx, month: Optional[int] = None, year: Optional[int] = None):
         """
         Sync mission completions from the start of a specified month.
