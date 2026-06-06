@@ -56,7 +56,7 @@ class MissionTracker(commands.Cog):
         }
     
     @commands.hybrid_command(name="sync_missions", description="Sync mission completions from a date range")
-    @commands.has_role(729817672585314305)
+    @commands.has_permissions(administrator=True)
     async def sync_missions(self, ctx, month: Optional[int] = None, year: Optional[int] = None):
         """
         Sync mission completions from the start of a specified month.
@@ -352,70 +352,83 @@ class MissionTracker(commands.Cog):
     def _extract_passed_usernames(self, content: str) -> List[str]:
         """
         Extract usernames from the "Passed:" field.
-        Uses the LAST occurrence of "Passed:" to avoid duplicates in the message.
-        Supports formats:
-        - Passed: Username (same line)
-        - Passed: (next line has Username)
-        - @Role Username | @Role Username
-        - Username, Username
-        - Mixed format
+        Takes everything after "Passed:" and extracts member names.
+        Handles:
+        - Pings: @role Username
+        - Comma separated: Username, Username
+        - Pipe separated: @role Username | @role Username
+        - Mixed formatting and markdown
         """
-        # Find the LAST Passed: line (to avoid duplicates in message)
-        passed_line = None
-        lines = content.split('\n')
+        # Find the last occurrence of "Passed:"
+        if 'Passed:' not in content:
+            return []
         
-        # Iterate backwards to find the last occurrence
-        for i in range(len(lines) - 1, -1, -1):
-            line = lines[i]
-            if line.startswith('Passed:'):
-                # Try to get content from same line first
-                passed_line = line.split(':', 1)[1].strip()
-                
-                # If nothing on same line, check next line
-                if not passed_line and i + 1 < len(lines):
-                    passed_line = lines[i + 1].strip()
-                
-                break
+        # Get everything after the last "Passed:" occurrence
+        last_index = content.rfind('Passed:')
+        passed_content = content[last_index + len('Passed:'):]
         
-        if not passed_line or passed_line == '':
+        # Remove markdown and extra whitespace
+        passed_content = passed_content.strip().lstrip('*_`').rstrip('*_`').strip()
+        
+        if not passed_content:
             return []
         
         usernames = []
         
         # Split by pipe | for mention format
-        if '|' in passed_line:
-            parts = passed_line.split('|')
+        if '|' in passed_content:
+            parts = passed_content.split('|')
             for part in parts:
-                part = part.strip()
-                # Remove @Role prefix if present
-                match = re.search(r'@\w+\s+(.+)', part)
-                if match:
-                    username = match.group(1).strip()
-                else:
-                    username = part
+                username = self._extract_username_from_part(part)
                 if username:
                     usernames.append(username)
         
         # Split by comma for comma-separated format
-        elif ',' in passed_line:
-            parts = passed_line.split(',')
+        elif ',' in passed_content:
+            parts = passed_content.split(',')
             for part in parts:
-                username = part.strip()
+                username = self._extract_username_from_part(part)
                 if username:
                     usernames.append(username)
         
-        # Single username without separators
+        # Single or newline-separated usernames
         else:
-            # Remove @Role prefix if present
-            match = re.search(r'@\w+\s+(.+)', passed_line)
-            if match:
-                username = match.group(1).strip()
-            else:
-                username = passed_line
-            if username:
-                usernames.append(username)
+            # Split by newlines to handle usernames on multiple lines
+            lines = passed_content.split('\n')
+            for line in lines:
+                username = self._extract_username_from_part(line)
+                if username:
+                    usernames.append(username)
         
         return [u for u in usernames if u]  # Filter empty strings
+    
+    def _extract_username_from_part(self, part: str) -> Optional[str]:
+        """Extract username from a part, handling pings, markdown, and list markers"""
+        part = part.strip()
+        
+        if not part:
+            return None
+        
+        # Remove list markers (-, *, •, etc.)
+        part = re.sub(r'^[-*•\s]+', '', part).strip()
+        
+        # Remove markdown characters
+        part = part.lstrip('*_`').rstrip('*_`').strip()
+        
+        if not part:
+            return None
+        
+        # Remove @role prefix if present
+        match = re.search(r'@\w+\s+(.+)', part)
+        if match:
+            username = match.group(1).strip()
+        else:
+            username = part
+        
+        # Remove any remaining markdown or special characters
+        username = re.sub(r'^[*_`\s]+|[*_`\s]+$', '', username)
+        
+        return username if username else None
     
     async def _create_mission_from_message(self, message: discord.Message, mission_data: dict):
         """Create a Mission record via HTTP API"""
@@ -554,7 +567,13 @@ class MissionTracker(commands.Cog):
                 print(f"   ├─ Mission: {mission_title}")
                 print(f"   ├─ Difficulty: {mission_stars} ⭐")
                 print(f"   ├─ Members Added: {stats.get('added', 0)}")
+                if new_completers:
+                    for member in new_completers:
+                        print(f"   │  ✓ {member}")
                 print(f"   ├─ Members Removed: {stats.get('deleted', 0)}")
+                if deleted_completers:
+                    for member in deleted_completers:
+                        print(f"   │  ✗ {member}")
                 print(f"   └─ Verified by: {message_author.name}#{message_author.discriminator}\n")
                 logger.info(
                     f"[MissionTracker] ✅ {mission_title}: "

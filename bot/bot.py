@@ -11,7 +11,8 @@ from datetime import datetime, timedelta
 from tf_api_client import TFSystemAPI
 
 
-load_dotenv()
+# Load environment variables from .env file in the bot directory
+load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 
 
 # Environment variables
