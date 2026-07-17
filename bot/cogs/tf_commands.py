@@ -265,16 +265,28 @@ class TFSystemCog(commands.Cog):
                 await message.channel.send("👋 Hello! How can I help you with the Taskforce System?")
                 return
 
-            # Show typing indicator
+            # Show typing indicator (with fallback if typing fails)
+            handler = ResponseHandler(message, is_interaction=False)
+            command_executed = False
             try:
                 async with message.channel.typing():
-                    # Create a handler wrapper
-                    handler = ResponseHandler(message, is_interaction=False)
+                    command_executed = True
                     await self.process_command(handler, content)
             except discord.Forbidden:
                 print(f"Permission error: Cannot type/send messages in channel {message.channel.id} ({message.channel.name if hasattr(message.channel, 'name') else 'DM'})")
             except Exception as e:
-                print(f"Error in on_message handler: {e}")
+                if not command_executed:
+                    print(f"Typing indicator failed ({e}). Attempting to run command without typing...")
+                    try:
+                        await self.process_command(handler, content)
+                    except Exception as inner_e:
+                        import traceback
+                        print(f"Error in on_message handler (without typing): {inner_e}")
+                        traceback.print_exc()
+                else:
+                    import traceback
+                    print(f"Error in on_message handler: {e}")
+                    traceback.print_exc()
 
     @app_commands.command(name="tf", description="Natural language TF management command")
     @has_tf_permissions()
