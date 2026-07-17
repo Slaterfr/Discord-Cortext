@@ -193,23 +193,26 @@ class MissionTracker(commands.Cog):
         if message.channel.id != self.mission_channel_id:
             return
         
-        logger.debug(f"[MissionTracker] 📨 Message received in mission channel from {message.author.name}")
-        print(f"\n🔔 [MESSAGE DETECTED]")
-        print(f"   ├─ Author: {message.author.name}#{message.author.discriminator}")
-        print(f"   ├─ Channel: {message.channel.name if hasattr(message.channel, 'name') else 'DM'}")
-        print(f"   ├─ Message ID: {message.id}")
-        content_preview = message.content[:100] + "..." if len(message.content) > 100 else message.content
-        print(f"   └─ Content: {content_preview}")
-        
-        # Try to parse mission from message
-        mission_data = self._parse_mission_message(message.content)
-        if mission_data:
-            logger.info(f"[MissionTracker] 🔍 Mission parsed: {mission_data.get('title')}")
-            print(f"   ✓ Mission format detected!\n")
-            await self._create_mission_from_message(message, mission_data)
-        else:
-            print(f"   ✗ Not a mission format\n")
-            logger.debug(f"[MissionTracker] ⏭️ Message doesn't match mission format")
+        try:
+            logger.debug(f"[MissionTracker] 📨 Message received in mission channel from {message.author.name}")
+            print(f"\n🔔 [MESSAGE DETECTED]")
+            print(f"   ├─ Author: {message.author.name}#{message.author.discriminator}")
+            print(f"   ├─ Channel: {message.channel.name if hasattr(message.channel, 'name') else 'DM'}")
+            print(f"   ├─ Message ID: {message.id}")
+            content_preview = message.content[:100] + "..." if len(message.content) > 100 else message.content
+            print(f"   └─ Content: {content_preview}")
+            
+            # Try to parse mission from message
+            mission_data = self._parse_mission_message(message.content)
+            if mission_data:
+                logger.info(f"[MissionTracker] 🔍 Mission parsed: {mission_data.get('title')}")
+                print(f"   ✓ Mission format detected!\n")
+                await self._create_mission_from_message(message, mission_data)
+            else:
+                print(f"   ✗ Not a mission format\n")
+                logger.debug(f"[MissionTracker] ⏭️ Message doesn't match mission format")
+        except Exception as e:
+            logger.error(f"[MissionTracker] Error processing on_message: {e}", exc_info=True)
     
     @commands.Cog.listener()
     async def on_message_edit(self, before: discord.Message, after: discord.Message):
@@ -222,48 +225,51 @@ class MissionTracker(commands.Cog):
         if after.channel.id != self.mission_channel_id:
             return
         
-        # Log all edits for visibility
-        logger.debug(f"[MissionTracker] 📝 Message edit detected in mission channel from {after.author.name}")
-        print(f"\n📝 [MESSAGE EDIT DETECTED] from {after.author.name}#{after.author.discriminator}")
-        
-        # Extract passed usernames from before and after
-        before_passed = self._extract_passed_usernames(before.content)
-        after_passed = self._extract_passed_usernames(after.content)
-        
-        print(f"   ├─ Before Passed: {before_passed if before_passed else 'None'}")
-        print(f"   └─ After Passed: {after_passed if after_passed else 'None'}")
-        
-        # Find new and removed completers
-        new_completers = set(after_passed) - set(before_passed)
-        deleted_completers = set(before_passed) - set(after_passed)
-        
-        print(f"   ├─ New: {list(new_completers) if new_completers else 'None'}")
-        print(f"   └─ Removed: {list(deleted_completers) if deleted_completers else 'None'}")
-        
-        if not new_completers and not deleted_completers:
-            print(f"   ℹ️ No changes in Passed field detected\n")
-            return
-        
-        if new_completers or deleted_completers:
-            logger.info(f"[MissionTracker] ✏️ Mission edited: {len(new_completers)} added, {len(deleted_completers)} removed")
-            print(f"✏️ [PASSED FIELD CHANGED]")
-            print(f"   ├─ Author: {after.author.name}#{after.author.discriminator}")
-            print(f"   ├─ Verifier: {after.author.name}")
-            if new_completers:
-                print(f"   ├─ ✅ Passed - New Members ({len(new_completers)}):")
-                for member in new_completers:
-                    print(f"   │  └─ {member}")
-            if deleted_completers:
-                print(f"   ├─ ❌ Removed Members ({len(deleted_completers)}):")
-                for member in deleted_completers:
-                    print(f"   │  └─ {member}")
-            print(f"   └─ Message ID: {after.id}\n")
-            await self._log_mission_completions(
-                after.id, 
-                new_completers, 
-                deleted_completers, 
-                after.author
-            )
+        try:
+            # Log all edits for visibility
+            logger.debug(f"[MissionTracker] 📝 Message edit detected in mission channel from {after.author.name}")
+            print(f"\n📝 [MESSAGE EDIT DETECTED] from {after.author.name}#{after.author.discriminator}")
+            
+            # Extract passed usernames from before and after
+            before_passed = self._extract_passed_usernames(before.content)
+            after_passed = self._extract_passed_usernames(after.content)
+            
+            print(f"   ├─ Before Passed: {before_passed if before_passed else 'None'}")
+            print(f"   └─ After Passed: {after_passed if after_passed else 'None'}")
+            
+            # Find new and removed completers
+            new_completers = set(after_passed) - set(before_passed)
+            deleted_completers = set(before_passed) - set(after_passed)
+            
+            print(f"   ├─ New: {list(new_completers) if new_completers else 'None'}")
+            print(f"   └─ Removed: {list(deleted_completers) if deleted_completers else 'None'}")
+            
+            if not new_completers and not deleted_completers:
+                print(f"   ℹ️ No changes in Passed field detected\n")
+                return
+            
+            if new_completers or deleted_completers:
+                logger.info(f"[MissionTracker] ✏️ Mission edited: {len(new_completers)} added, {len(deleted_completers)} removed")
+                print(f"✏️ [PASSED FIELD CHANGED]")
+                print(f"   ├─ Author: {after.author.name}#{after.author.discriminator}")
+                print(f"   ├─ Verifier: {after.author.name}")
+                if new_completers:
+                    print(f"   ├─ ✅ Passed - New Members ({len(new_completers)}):")
+                    for member in new_completers:
+                        print(f"   │  └─ {member}")
+                if deleted_completers:
+                    print(f"   ├─ ❌ Removed Members ({len(deleted_completers)}):")
+                    for member in deleted_completers:
+                        print(f"   │  └─ {member}")
+                print(f"   └─ Message ID: {after.id}\n")
+                await self._log_mission_completions(
+                    after.id, 
+                    new_completers, 
+                    deleted_completers, 
+                    after.author
+                )
+        except Exception as e:
+            logger.error(f"[MissionTracker] Error processing on_message_edit: {e}", exc_info=True)
     
     def _parse_mission_message(self, content: str) -> Optional[dict]:
         """

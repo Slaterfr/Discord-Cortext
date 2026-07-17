@@ -25,7 +25,7 @@ from tf_api_client import TFSystemAPI
 
 # Get Groq configuration from environment
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')
-GROQ_MODEL = os.getenv('GROQ_MODEL')
+GROQ_MODEL = os.getenv('GROQ_MODEL', 'llama-3.3-70b-versatile')
 ALLOWED_GUILD_ID = os.getenv('ALLOWED_GUILD_ID')
 
 # Debug: Show which model is being used
@@ -233,6 +233,8 @@ class TFSystemCog(commands.Cog):
     
     # Helper to check permissions synchronously for message events
     def check_permissions(self, user):
+        if not hasattr(user, 'roles'):
+            return False
         user_roles = [role.name for role in user.roles]
         return any(role in ALLOWED_ROLES for role in user_roles)
 
@@ -244,8 +246,14 @@ class TFSystemCog(commands.Cog):
 
         # Check if bot is mentioned
         if self.bot.user.mentioned_in(message) and not message.mention_everyone:
+            # Check if bot has permission to send messages in this channel
+            if message.guild:
+                permissions = message.channel.permissions_for(message.guild.me)
+                if not permissions.send_messages:
+                    return
+            
             # Check for allowed guild
-            if ALLOWED_GUILD_ID and str(message.guild.id) != str(ALLOWED_GUILD_ID):
+            if ALLOWED_GUILD_ID and message.guild and str(message.guild.id) != str(ALLOWED_GUILD_ID):
                # Optional: log or ignore. Ignoring is usually safer to avoid spam.
                return
             # Clean content: remove mention
@@ -258,10 +266,15 @@ class TFSystemCog(commands.Cog):
                 return
 
             # Show typing indicator
-            async with message.channel.typing():
-                # Create a handler wrapper
-                handler = ResponseHandler(message, is_interaction=False)
-                await self.process_command(handler, content)
+            try:
+                async with message.channel.typing():
+                    # Create a handler wrapper
+                    handler = ResponseHandler(message, is_interaction=False)
+                    await self.process_command(handler, content)
+            except discord.Forbidden:
+                print(f"Permission error: Cannot type/send messages in channel {message.channel.id} ({message.channel.name if hasattr(message.channel, 'name') else 'DM'})")
+            except Exception as e:
+                print(f"Error in on_message handler: {e}")
 
     @app_commands.command(name="tf", description="Natural language TF management command")
     @has_tf_permissions()
@@ -330,9 +343,12 @@ class TFSystemCog(commands.Cog):
         
         except Exception as e:
             print(f"Error executing TF command: {e}")
-            await handler.send(
-                f"❌ An error occurred: {str(e)}"
-            )
+            try:
+                await handler.send(
+                    f"❌ An error occurred: {str(e)}"
+                )
+            except Exception as send_error:
+                print(f"Could not send error response: {send_error}")
 
 
     

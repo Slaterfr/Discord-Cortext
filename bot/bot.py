@@ -9,6 +9,14 @@ import asyncio
 from collections import defaultdict
 from datetime import datetime, timedelta
 from tf_api_client import TFSystemAPI
+import sys
+
+# Reconfigure stdout/stderr to use UTF-8 to prevent UnicodeEncodeError on Windows console
+if sys.platform == "win32":
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8')
+    if hasattr(sys.stderr, 'reconfigure'):
+        sys.stderr.reconfigure(encoding='utf-8')
 
 
 # Load environment variables from .env file in the bot directory
@@ -79,7 +87,9 @@ async def on_message(message):
 @bot.event
 async def on_error(event, *args, **kwargs):
     """Global error handler."""
+    import traceback
     print(f"Error in {event}: {args} {kwargs}")
+    traceback.print_exc()
 
 
 if __name__ == "__main__":
