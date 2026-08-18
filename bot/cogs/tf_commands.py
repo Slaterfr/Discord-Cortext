@@ -82,8 +82,11 @@ Valid actions:
 - list_members: List all members or filter by rank
 - add_member: Add a new member
 - remove_member: Remove a member
-- log_activity: Log an activity for a member
-- remove_activity: Remove/delete an activity entry for a member
+- log_activity: Log one activity for a member (single entry)
+- bulk_log_activity: Log multiple activities of the same type for one member (quantity > 1)
+- remove_activity: Remove the most-recent activity of a given type for a member (quantity = 1)
+- bulk_remove_activity: Remove multiple activities of the same type for a member (quantity > 1)
+- count_activities: Count how many activities of a type a member has
 - check_points: Check a member's current AC points and quota progress
 
 Activity Types and Points:
@@ -123,17 +126,30 @@ CRITICAL: Activity Type Spelling
 - "supervision" -> MUST map to "Supervision"
 - This is extremely important for the database to recognize the activity.
 
+IMPORTANT: Single vs Bulk Activity Logging
+- When the user says "log a training for John" -> log_activity, quantity omitted
+- When the user says "log 4 trainings for John" or "log 4x training for John" -> bulk_log_activity, quantity: 4
+- When the user says "log 8 missions for Sarah" -> bulk_log_activity, quantity: 8
+- Rule: if a number > 1 is mentioned, use bulk_log_activity with that quantity.
+- The "quantity" field is always an integer >= 1.
+
 IMPORTANT: Activity Removal Recognition
-Recognize these patterns for removing activities:
-- "remove activity from [member]" -> remove_activity with member name (will need to specify which activity if multiple)
-- "remove [activity type] for [member]" -> remove_activity with activity type and member name
-- "undo [activity type] for [member]" -> remove_activity with activity type and member name
-- "delete activity for [member]" -> remove_activity with member name
-- "remove [number] points from [member]" -> May need clarification which activity to remove
+- "remove training for John" -> remove_activity, activity_type: "Training", quantity: 1
+- "undo raid for Sarah" -> remove_activity, activity_type: "Raid", quantity: 1
+- "remove 3 trainings for John" or "undo 3 trainings from John" -> bulk_remove_activity, activity_type: "Training", quantity: 3
+- "delete 5 missions from Bob" -> bulk_remove_activity, activity_type: "Mission", quantity: 5
+- "remove activity from [member]" with no type -> remove_activity with activity_type omitted
+- Rule: if a number > 1 is mentioned, use bulk_remove_activity.
+
+IMPORTANT: Count Activity Recognition
+- "how many trainings does John have" -> count_activities, member_name: "John", activity_type: "Training"
+- "how many missions has Sarah done" -> count_activities, member_name: "Sarah", activity_type: "Mission"
+- "count raids for Bob" -> count_activities, member_name: "Bob", activity_type: "Raid"
+- "how many activities does X have" -> count_activities, member_name: "X" (no activity_type = show all)
+- Optional: "this period" or "this cycle" -> period_only: true
 
 IMPORTANT: Check Points Recognition
-Recognize these patterns for checking points:
-- "how many points do I have" -> check_points with no member name (check current user)
+- "how many points do I have" -> check_points with no member name
 - "what are my points" -> check_points with no member name
 - "check my progress" -> check_points with no member name
 - "how many points does [member] have" -> check_points with member name
@@ -141,22 +157,19 @@ Recognize these patterns for checking points:
 - "check points for [member]" -> check_points with member name
 
 Examples of correct parsing:
-1. "show all generals" -> {"action": "list_members", "parameters": {"rank": "General"}}
-2. "list all commanders" -> {"action": "list_members", "parameters": {"rank": "Commander"}}
-3. "show paladins" -> {"action": "list_members", "parameters": {"rank": "Paladin"}}
-4. "list everyone" -> {"action": "list_members", "parameters": {}}
-5. "change John to Commander" -> {"action": "change_rank", "parameters": {"member_name": "John", "new_rank": "Commander"}}
-6. "what rank is Sarah?" -> {"action": "get_member_info", "parameters": {"member_name": "Sarah"}}
-7. "log a cancelled training for Clicky" -> {"action": "log_activity", "parameters": {"member_name": "Clicky", "activity_type": "Cancelled Training"}}
-8. "log a canceled training for Bob" -> {"action": "log_activity", "parameters": {"member_name": "Bob", "activity_type": "Cancelled Training"}}
-9. "log a cancelled tryout for Steve" -> {"action": "log_activity", "parameters": {"member_name": "Steve", "activity_type": "Cancelled Tryout"}}
-10. "log supervision for John" -> {"action": "log_activity", "parameters": {"member_name": "John", "activity_type": "Supervision"}}
-11. "log tryout grading for Alice" -> {"action": "log_activity", "parameters": {"member_name": "Alice", "activity_type": "Tryout Grading"}}
-12. "remove training for John" -> {"action": "remove_activity", "parameters": {"member_name": "John", "activity_type": "Training"}}
-13. "undo raid for Sarah" -> {"action": "remove_activity", "parameters": {"member_name": "Sarah", "activity_type": "Raid"}}
-14. "how many points do I have" -> {"action": "check_points", "parameters": {}}
-15. "what are my points" -> {"action": "check_points", "parameters": {}}
-16. "how many points does John have" -> {"action": "check_points", "parameters": {"member_name": "John"}}
+1.  "show all generals" -> {"action": "list_members", "parameters": {"rank": "General"}}
+2.  "change John to Commander" -> {"action": "change_rank", "parameters": {"member_name": "John", "new_rank": "Commander"}}
+3.  "log a cancelled training for Clicky" -> {"action": "log_activity", "parameters": {"member_name": "Clicky", "activity_type": "Cancelled Training"}}
+4.  "log 4 trainings for John" -> {"action": "bulk_log_activity", "parameters": {"member_name": "John", "activity_type": "Training", "quantity": 4}}
+5.  "log 8 missions for Sarah" -> {"action": "bulk_log_activity", "parameters": {"member_name": "Sarah", "activity_type": "Mission", "quantity": 8}}
+6.  "remove training for John" -> {"action": "remove_activity", "parameters": {"member_name": "John", "activity_type": "Training"}}
+7.  "undo raid for Sarah" -> {"action": "remove_activity", "parameters": {"member_name": "Sarah", "activity_type": "Raid"}}
+8.  "remove 3 trainings from John" -> {"action": "bulk_remove_activity", "parameters": {"member_name": "John", "activity_type": "Training", "quantity": 3}}
+9.  "delete 5 missions from Bob" -> {"action": "bulk_remove_activity", "parameters": {"member_name": "Bob", "activity_type": "Mission", "quantity": 5}}
+10. "how many trainings does John have" -> {"action": "count_activities", "parameters": {"member_name": "John", "activity_type": "Training"}}
+11. "count raids for Sarah this cycle" -> {"action": "count_activities", "parameters": {"member_name": "Sarah", "activity_type": "Raid", "period_only": true}}
+12. "how many activities does Bob have" -> {"action": "count_activities", "parameters": {"member_name": "Bob"}}
+13. "how many points does John have" -> {"action": "check_points", "parameters": {"member_name": "John"}}
 
 Respond ONLY with a JSON object in this format:
 {
@@ -166,12 +179,14 @@ Respond ONLY with a JSON object in this format:
     "new_rank": "rank name",
     "rank": "rank filter",
     "activity_type": "activity type",
-    etc.
+    "quantity": 1,
+    "period_only": false
   },
   "confidence": 0.0-1.0
 }
 
 If you can't parse the command, set action to "unknown" and explain in a "reason" field."""
+
 
     try:
         completion = groq_client.chat.completions.create(
@@ -315,7 +330,11 @@ class TFSystemCog(commands.Cog):
             
             # Execute based on action
             # For actions that modify state, check permissions
-            protected_actions = ['change_rank', 'add_member', 'remove_member', 'log_activity', 'remove_activity']
+            protected_actions = [
+                'change_rank', 'add_member', 'remove_member',
+                'log_activity', 'bulk_log_activity',
+                'remove_activity', 'bulk_remove_activity',
+            ]
             
             if intent['action'] in protected_actions:
                  if not self.check_permissions(handler.user):
@@ -343,8 +362,17 @@ class TFSystemCog(commands.Cog):
             elif intent['action'] == 'log_activity':
                 await self._handle_log_activity(handler, intent['parameters'])
             
+            elif intent['action'] == 'bulk_log_activity':
+                await self._handle_bulk_log_activity(handler, intent['parameters'])
+            
             elif intent['action'] == 'remove_activity':
                 await self._handle_remove_activity(handler, intent['parameters'])
+            
+            elif intent['action'] == 'bulk_remove_activity':
+                await self._handle_bulk_remove_activity(handler, intent['parameters'])
+            
+            elif intent['action'] == 'count_activities':
+                await self._handle_count_activities(handler, intent['parameters'])
             
             elif intent['action'] == 'check_points':
                 await self._handle_check_points(handler, intent['parameters'])
@@ -567,10 +595,12 @@ class TFSystemCog(commands.Cog):
             )
     
     async def _handle_log_activity(self, handler: ResponseHandler, params: dict):
-        """Handle log activity requests"""
+        """Handle single activity log requests"""
         member_name = params.get('member_name')
         activity_type = params.get('activity_type')
         description = params.get('description')
+        # Honour an explicit quantity from Groq even in this handler
+        quantity = int(params.get('quantity', 1))
         
         if not member_name or not activity_type:
             await handler.send(
@@ -593,7 +623,8 @@ class TFSystemCog(commands.Cog):
                 member_id=member['id'],
                 activity_type=activity_type,
                 description=description or f"{activity_type} logged via Discord",
-                discord_user_id=str(handler.user.id)
+                discord_user_id=str(handler.user.id),
+                quantity=quantity,
             )
             
             if result.get('success'):
@@ -607,12 +638,13 @@ class TFSystemCog(commands.Cog):
                 total_points = quota_progress.get('total_points', 0)
                 quota = quota_progress.get('quota', 0)
                 
-                # Format total_points and quota (remove .0 if integer)
                 total_str = f"{int(total_points)}" if isinstance(total_points, (int, float)) and total_points == int(total_points) else f"{total_points}"
                 quota_str = f"{int(quota)}" if isinstance(quota, (int, float)) and quota == int(quota) else f"{quota}"
-                
+
+                qty_str = f" (x{quantity})" if quantity > 1 else ""
                 await handler.send(
-                    f"✅ Logged {activity_type} ({points_str} pts) for **{member_name}**, they now have {total_str}/{quota_str} points."
+                    f"✅ Logged {activity_type}{qty_str} ({points_str} pts) for **{member_name}**, "
+                    f"they now have {total_str}/{quota_str} points."
                 )
             else:
                 await handler.send(
@@ -622,89 +654,96 @@ class TFSystemCog(commands.Cog):
             await handler.send(f"❌ Error processing log response: {str(e)}")
             print(f"Full result: {locals().get('result', 'No result')}")
 
-    async def _handle_remove_activity(self, handler: ResponseHandler, params: dict):
-        """Handle remove activity requests"""
+    async def _handle_bulk_log_activity(self, handler: ResponseHandler, params: dict):
+        """Handle bulk activity log requests (quantity > 1)."""
         member_name = params.get('member_name')
         activity_type = params.get('activity_type')
-        
-        if not member_name:
-            await handler.send(
-                "❌ I need a member name to find which activity to remove."
-            )
+        description = params.get('description')
+        quantity = max(1, int(params.get('quantity', 2)))
+
+        if not member_name or not activity_type:
+            await handler.send("❌ I need both a member name and an activity type.")
             return
-        
-        # Find member
+
         member = await tf_api.find_member_by_name(member_name)
-        
         if not member:
-            await handler.send(
-                f"❌ Could not find member **{member_name}**"
-            )
+            await handler.send(f"❌ Could not find member **{member_name}**")
             return
-        
-        # Get member's activities to find the one to remove
-        activities_result = await tf_api.get_member_activities(member['id'], limit=50)
-        
-        if not activities_result.get('success'):
-            await handler.send(
-                f"❌ Could not retrieve activities for **{member_name}**"
-            )
-            return
-        
-        activities = activities_result.get('activities', [])
-        
-        if not activities:
-            await handler.send(
-                f"❌ No activities found for **{member_name}**"
-            )
-            return
-        
-        # Find the activity to remove
-        activity_to_remove = None
-        
-        if activity_type:
-            # Find most recent activity of this type
-            for activity in activities:
-                if activity['activity_type'] == activity_type:
-                    activity_to_remove = activity
-                    break
-        else:
-            # If no activity type specified, remove the most recent
-            activity_to_remove = activities[0]
-            activity_type = activity_to_remove['activity_type']
-        
-        if not activity_to_remove:
-            await handler.send(
-                f"❌ Could not find {f'**{activity_type}** activity' if activity_type else 'an activity'} for **{member_name}**"
-            )
-            return
-        
-        # Remove the activity
+
         try:
-            result = await tf_api.remove_activity(
-                activity_id=activity_to_remove['id'],
-                discord_user_id=str(handler.user.id)
+            result = await tf_api.log_activity(
+                member_id=member['id'],
+                activity_type=activity_type,
+                description=description or f"{quantity}x {activity_type} logged via Discord",
+                discord_user_id=str(handler.user.id),
+                quantity=quantity,
             )
-            
+
             if result.get('success'):
                 activity = result.get('activity', {})
-                points = activity.get('points', 0)
-                activity_type = activity.get('type', activity_type)
-                
-                # Format points (remove .0 if integer)
-                points_str = f"{int(points)}" if isinstance(points, (int, float)) and points == int(points) else f"{points}"
-                
-                # Get quota progress information
+                total_pts = activity.get('points', 0)
+                points_str = f"{int(total_pts)}" if isinstance(total_pts, (int, float)) and total_pts == int(total_pts) else f"{total_pts}"
+
                 quota_progress = result.get('quota_progress', {})
                 total_points = quota_progress.get('total_points', 0)
                 quota = quota_progress.get('quota', 0)
-                
-                # Format total_points and quota (remove .0 if integer)
                 total_str = f"{int(total_points)}" if isinstance(total_points, (int, float)) and total_points == int(total_points) else f"{total_points}"
                 quota_str = f"{int(quota)}" if isinstance(quota, (int, float)) and quota == int(quota) else f"{quota}"
-                
+
                 await handler.send(
-                    f"✅ Removed {activity_type} ({points_str} pts) from **{member_name}**, they now have {total_str}/{quota_str} points."
+                    f"✅ Logged **{quantity}x {activity_type}** ({points_str} pts total) for **{member_name}**, "
+                    f"they now have {total_str}/{quota_str} points."
+                )
+            else:
+                await handler.send(
+                    f"❌ Failed to log activities: {result.get('message', 'Unknown API error')}"
+                )
+        except Exception as e:
+            await handler.send(f"❌ Error logging activities: {str(e)}")
+            print(f"Full result: {locals().get('result', 'No result')}")
+
+    async def _handle_remove_activity(self, handler: ResponseHandler, params: dict):
+        """Handle single activity removal — delegates to the by-type API endpoint."""
+        member_name = params.get('member_name')
+        activity_type = params.get('activity_type')
+
+        if not member_name:
+            await handler.send("❌ I need a member name to find which activity to remove.")
+            return
+
+        member = await tf_api.find_member_by_name(member_name)
+        if not member:
+            await handler.send(f"❌ Could not find member **{member_name}**")
+            return
+
+        # If no activity type, fall back to removing the single most-recent entry
+        # by fetching the latest activity and passing its type.
+        if not activity_type:
+            activities_result = await tf_api.get_member_activities(member['id'], limit=1)
+            activities = activities_result.get('activities', [])
+            if not activities:
+                await handler.send(f"❌ No activities found for **{member_name}**")
+                return
+            activity_type = activities[0]['activity_type']
+
+        try:
+            result = await tf_api.remove_activities_by_type(
+                member_id=member['id'],
+                activity_type=activity_type,
+                quantity=1,
+                discord_user_id=str(handler.user.id),
+            )
+
+            if result.get('success'):
+                quota_progress = result.get('quota_progress', {})
+                total_points = quota_progress.get('total_points', 0)
+                quota = quota_progress.get('quota', 0)
+                total_str = f"{int(total_points)}" if isinstance(total_points, (int, float)) and total_points == int(total_points) else f"{total_points}"
+                quota_str = f"{int(quota)}" if isinstance(quota, (int, float)) and quota == int(quota) else f"{quota}"
+
+                await handler.send(
+                    f"✅ Removed **{activity_type}** from **{member_name}**, "
+                    f"they now have {total_str}/{quota_str} points."
                 )
             else:
                 await handler.send(
@@ -713,6 +752,105 @@ class TFSystemCog(commands.Cog):
         except Exception as e:
             await handler.send(f"❌ Error removing activity: {str(e)}")
             print(f"Full result: {locals().get('result', 'No result')}")
+
+    async def _handle_bulk_remove_activity(self, handler: ResponseHandler, params: dict):
+        """Handle bulk activity removal (quantity > 1)."""
+        member_name = params.get('member_name')
+        activity_type = params.get('activity_type')
+        quantity = max(1, int(params.get('quantity', 2)))
+
+        if not member_name:
+            await handler.send("❌ I need a member name.")
+            return
+        if not activity_type:
+            await handler.send("❌ I need an activity type to remove in bulk.")
+            return
+
+        member = await tf_api.find_member_by_name(member_name)
+        if not member:
+            await handler.send(f"❌ Could not find member **{member_name}**")
+            return
+
+        try:
+            result = await tf_api.remove_activities_by_type(
+                member_id=member['id'],
+                activity_type=activity_type,
+                quantity=quantity,
+                discord_user_id=str(handler.user.id),
+            )
+
+            if result.get('success'):
+                deleted = result.get('deleted', quantity)
+                quota_progress = result.get('quota_progress', {})
+                total_points = quota_progress.get('total_points', 0)
+                quota = quota_progress.get('quota', 0)
+                total_str = f"{int(total_points)}" if isinstance(total_points, (int, float)) and total_points == int(total_points) else f"{total_points}"
+                quota_str = f"{int(quota)}" if isinstance(quota, (int, float)) and quota == int(quota) else f"{quota}"
+
+                await handler.send(
+                    f"✅ Removed **{deleted}x {activity_type}** from **{member_name}**, "
+                    f"they now have {total_str}/{quota_str} points."
+                )
+            else:
+                await handler.send(
+                    f"❌ Failed to remove activities: {result.get('message', 'Unknown API error')}"
+                )
+        except Exception as e:
+            await handler.send(f"❌ Error removing activities: {str(e)}")
+            print(f"Full result: {locals().get('result', 'No result')}")
+
+    async def _handle_count_activities(self, handler: ResponseHandler, params: dict):
+        """Handle count activities by type requests."""
+        member_name = params.get('member_name')
+        activity_type = params.get('activity_type')  # None = show all types
+        period_only = bool(params.get('period_only', False))
+
+        if not member_name:
+            await handler.send("❌ I need a member name to count activities.")
+            return
+
+        member = await tf_api.find_member_by_name(member_name)
+        if not member:
+            await handler.send(f"❌ Could not find member **{member_name}**")
+            return
+
+        try:
+            result = await tf_api.count_activities_by_type(
+                member_id=member['id'],
+                activity_type=activity_type,
+                period_only=period_only,
+            )
+
+            if result.get('success'):
+                count = result.get('count', 0)
+                breakdown = result.get('breakdown', {})
+                period_label = " (this period)" if period_only else ""
+
+                if activity_type:
+                    # Single-type response
+                    await handler.send(
+                        f"📊 **{member_name}** has **{count}** {activity_type} "
+                        f"entr{'y' if count == 1 else 'ies'}{period_label}."
+                    )
+                else:
+                    # Full breakdown embed
+                    embed = discord.Embed(
+                        title=f"📊 Activity Count: {member_name}{period_label}",
+                        description=f"**Total: {count} entries**",
+                        color=discord.Color.blue(),
+                    )
+                    for atype, cnt in sorted(breakdown.items(), key=lambda x: -x[1]):
+                        embed.add_field(name=atype, value=str(cnt), inline=True)
+                    if not breakdown:
+                        embed.description = "No activities found."
+                    await handler.send(embed=embed)
+            else:
+                await handler.send(
+                    f"❌ Failed to count activities: {result.get('message', 'Unknown error')}"
+                )
+        except Exception as e:
+            await handler.send(f"❌ Error counting activities: {str(e)}")
+
 
     async def _handle_check_points(self, handler: ResponseHandler, params: dict):
         """Handle check points requests"""
