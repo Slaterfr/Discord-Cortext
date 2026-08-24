@@ -599,8 +599,9 @@ class TFSystemCog(commands.Cog):
         member_name = params.get('member_name')
         activity_type = params.get('activity_type')
         description = params.get('description')
-        # Honour an explicit quantity from Groq even in this handler
-        quantity = int(params.get('quantity', 1))
+        # Honour an explicit quantity from Groq even in this handler.
+        # Use `or 1` so that Groq returning null/None is treated the same as omitting the field.
+        quantity = int(params.get('quantity') or 1)
         
         if not member_name or not activity_type:
             await handler.send(
@@ -659,7 +660,7 @@ class TFSystemCog(commands.Cog):
         member_name = params.get('member_name')
         activity_type = params.get('activity_type')
         description = params.get('description')
-        quantity = max(1, int(params.get('quantity', 2)))
+        quantity = max(1, int(params.get('quantity') or 2))
 
         if not member_name or not activity_type:
             await handler.send("❌ I need both a member name and an activity type.")
@@ -757,7 +758,7 @@ class TFSystemCog(commands.Cog):
         """Handle bulk activity removal (quantity > 1)."""
         member_name = params.get('member_name')
         activity_type = params.get('activity_type')
-        quantity = max(1, int(params.get('quantity', 2)))
+        quantity = max(1, int(params.get('quantity') or 2))
 
         if not member_name:
             await handler.send("❌ I need a member name.")
