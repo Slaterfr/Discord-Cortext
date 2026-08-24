@@ -608,8 +608,13 @@ class TFSystemCog(commands.Cog):
                 "❌ I need both a member name and an activity type."
             )
             return
-        
-        # Find member
+
+        if quantity > 200:
+            await handler.send(
+                f"❌ You can't log more than **200 entries at once** (you requested {quantity}). "
+                f"Please split them into smaller batches."
+            )
+            return
         member = await tf_api.find_member_by_name(member_name)
         
         if not member:
@@ -666,6 +671,14 @@ class TFSystemCog(commands.Cog):
             await handler.send("❌ I need both a member name and an activity type.")
             return
 
+        if quantity > 200:
+            await handler.send(
+                f"❌ You can't log more than **200 entries at once** (you requested {quantity}). "
+                f"Please split them into smaller batches."
+            )
+            return
+
+        # Find member
         member = await tf_api.find_member_by_name(member_name)
         if not member:
             await handler.send(f"❌ Could not find member **{member_name}**")
