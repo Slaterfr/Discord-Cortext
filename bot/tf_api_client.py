@@ -47,6 +47,13 @@ class TFSystemAPI:
             'Authorization': f'Bearer {self.api_key}',
             'Content-Type': 'application/json'
         }
+
+        # In-memory TTL cache for dynamic configuration
+        self._activity_types_cache = None
+        self._activity_types_cache_time = None
+        self._quotas_cache = None
+        self._quotas_cache_time = None
+        self._cache_ttl = 300  # 5 minutes
     
     async def _request(self, method: str, endpoint: str, **kwargs) -> Dict:
         """Make an HTTP request to the API"""
@@ -459,6 +466,67 @@ class TFSystemAPI:
             quantity=quantity,
             discord_user_id=discord_user_id,
         )
+
+    # ========================================
+    # DYNAMIC ACTIVITIES & QUOTAS
+    # ========================================
+
+    async def get_activity_types(self, force_refresh: bool = False) -> List[Dict]:
+        """
+        Get all configured active activity types from the API.
+        Results are cached in-memory for 5 minutes.
+        """
+        now = datetime.utcnow()
+        if (
+            not force_refresh
+            and self._activity_types_cache is not None
+            and self._activity_types_cache_time is not None
+            and (now - self._activity_types_cache_time).total_seconds() < self._cache_ttl
+        ):
+            return self._activity_types_cache
+
+        result = await self._request('GET', '/activity-types')
+        if result.get('success'):
+            self._activity_types_cache = result.get('activity_types', [])
+            self._activity_types_cache_time = now
+            return self._activity_types_cache
+
+        if self._activity_types_cache is not None:
+            return self._activity_types_cache
+        return []
+
+    async def get_rank_quotas(self, force_refresh: bool = False) -> List[Dict]:
+        """
+        Get all configured rank quotas from the API.
+        Results are cached in-memory for 5 minutes.
+        """
+        now = datetime.utcnow()
+        if (
+            not force_refresh
+            and self._quotas_cache is not None
+            and self._quotas_cache_time is not None
+            and (now - self._quotas_cache_time).total_seconds() < self._cache_ttl
+        ):
+            return self._quotas_cache
+
+        result = await self._request('GET', '/quotas')
+        if result.get('success'):
+            self._quotas_cache = result.get('quotas', [])
+            self._quotas_cache_time = now
+            return self._quotas_cache
+
+        if self._quotas_cache is not None:
+            return self._quotas_cache
+        return []
+
+    async def get_activity_info(self, activity_name: str) -> Optional[Dict]:
+        """Look up activity details by name (case-insensitive)"""
+        types = await self.get_activity_types()
+        name_lower = (activity_name or '').strip().lower()
+        for act in types:
+            if act.get('name', '').lower() == name_lower:
+                return act
+        return None
 
 # Example usage in a Discord bot
 if __name__ == '__main__':

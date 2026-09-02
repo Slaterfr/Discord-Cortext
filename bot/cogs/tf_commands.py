@@ -42,6 +42,7 @@ tf_api = TFSystemAPI(
 
 # Define allowed roles (Commander, Marshal, General)
 ALLOWED_ROLES = ['Staff Team', 'Prospect', 'Commander', 'Marshal', 'General']
+GENERAL_ROLE_ID = 729817672585314305
 
 
 def has_tf_permissions():
@@ -57,23 +58,96 @@ def has_tf_permissions():
                 f"Required roles: {', '.join(ALLOWED_ROLES)}",
                 ephemeral=True
             )
+            return False
         
         return True
     
     return app_commands.check(predicate)
 
 
-async def parse_intent_with_groq(user_message: str) -> dict:
-    """
-    Use Groq AI to parse user intent and extract entities
-    
-    Args:
-        user_message: The user's natural language command
-    
-    Returns:
-        dict: Parsed intent with action, parameters, etc.
-    """
-    system_prompt = """You are a command parser for a Taskforce Management System.
+def has_general_role():
+    """Decorator to check if user has the General role (ID: 729817672585314305 or name 'General')"""
+    async def predicate(interaction: discord.Interaction):
+        if not hasattr(interaction.user, 'roles'):
+            await interaction.response.send_message(
+                "❌ You don't have permission to use this command.",
+                ephemeral=True
+            )
+            return False
+
+        has_role = any(
+            role.id == GENERAL_ROLE_ID or role.name.lower() == "general"
+            for role in interaction.user.roles
+        )
+        if not has_role:
+            await interaction.response.send_message(
+                "❌ This command is restricted to members with the **General** role.",
+                ephemeral=True
+            )
+            return False
+        return True
+
+    return app_commands.check(predicate)
+
+
+async def build_dynamic_system_prompt() -> str:
+    """Build system prompt dynamically by consulting the TF System API for activities and ranks."""
+    # 1. Fetch dynamic activities from API
+    try:
+        activity_types = await tf_api.get_activity_types()
+    except Exception:
+        activity_types = []
+
+    if activity_types:
+        act_lines = []
+        valid_act_names = []
+        for act in activity_types:
+            name = act.get("name", "")
+            pts = act.get("points", 0.0)
+            pts_str = f"{int(pts)}" if pts == int(pts) else f"{pts}"
+            limited_str = " (only 1 per cycle)" if act.get("is_limited") else ""
+            act_lines.append(f"- {name}: {pts_str} points{limited_str}")
+            valid_act_names.append(name)
+        activities_text = "\n".join(act_lines)
+        valid_activities_text = ", ".join(valid_act_names)
+    else:
+        activities_text = (
+            "- Mission: 0.5 points\n"
+            "- Supervision: 1 point\n"
+            "- Training: 1 point\n"
+            "- Raid or Patrol: 1.5 points\n"
+            "- Tryout: 1.5 points\n"
+            "- Tryout Certification: 1 point (host only)\n"
+            "- Cancelled Training: 0.5 points (only 1 per cycle)\n"
+            "- Cancelled Tryout: 0.5 points (only 1 per cycle)\n"
+            "- Tryout Grading: 0.5 points (only 1 per cycle)\n"
+            "- Dueling Supervision/Evaluation: 0.5 points (only 1 per cycle)\n"
+            "- Joint Combat Training (JCT): 1.5 points"
+        )
+        valid_activities_text = "Raid, Patrol, Training, Mission, Supervision, Tryout, Tryout Certification, Cancelled Training, Cancelled Tryout, Tryout Grading, Dueling Supervision/Evaluation, Joint Combat Training"
+
+    # 2. Fetch dynamic ranks/quotas from API
+    try:
+        quotas = await tf_api.get_rank_quotas()
+    except Exception:
+        quotas = []
+
+    try:
+        ranks_res = await tf_api.get_ranks()
+    except Exception:
+        ranks_res = {}
+
+    rank_names = []
+    if ranks_res and ranks_res.get("success"):
+        rank_names = [r.get("rank_name") for r in ranks_res.get("ranks", []) if r.get("rank_name")]
+    if not rank_names and quotas:
+        rank_names = [q.get("rank_name") for q in quotas if q.get("rank_name")]
+    if not rank_names:
+        rank_names = ["Aspirant", "Novice", "Adept", "Crusader", "Paladin", "Exemplar", "Prospect", "Commander", "Marshal", "General", "Chief General"]
+
+    valid_ranks_text = ", ".join(rank_names)
+
+    return f"""You are a command parser for a Taskforce Management System.
 Parse user commands and extract the intent and entities.
 
 Valid actions:
@@ -88,22 +162,14 @@ Valid actions:
 - bulk_remove_activity: Remove multiple activities of the same type for a member (quantity > 1)
 - count_activities: Count how many activities of a type a member has
 - check_points: Check a member's current AC points and quota progress
+- list_activities: List all valid activity types and their point values
+- list_quotas: List all rank quota requirements
 
-Activity Types and Points:
-- Mission: 0.5 points
-- Supervision: 1 point
-- Training: 1 point
-- Raid or Patrol: 1.5 points
-- Tryout: 1.5 points
-- Tryout Certification: 1 point (host only)
-- Cancelled Training: 0.5 points (only 1 per cycle)
-- Cancelled Tryout: 0.5 points (only 1 per cycle)
-- Tryout Grading: 0.5 points (only 1 per cycle)
-- Dueling Supervision/Evaluation: 0.5 points (only 1 per cycle)
-- Joint Combat Training (JCT): 1.5 points 
+Activity Types and Points (live from system):
+{activities_text}
 
-Valid ranks: Aspirant, Novice, Adept, Crusader, Paladin, Exemplar, Prospect, Commander, Marshal, General, Chief General
-Valid activity types: Raid, Patrol, Training, Mission, Supervision, Tryout, Tryout Certification, Cancelled Training, Cancelled Tryout, Tryout Grading, Dueling Supervision/Evaluation, Joint Combat Training
+Valid ranks: {valid_ranks_text}
+Valid activity types: {valid_activities_text}
 
 IMPORTANT: Recognize these variations for listing members:
 - "show all members" -> list_members with no rank filter
@@ -116,15 +182,21 @@ IMPORTANT: Recognize these variations for listing members:
 - "what rank is [member name]" -> get_member_info with member name
 - "what rank is [member name]" -> get_member_info, look up for members with similar letters, people may use nicknames, if i say "slater" i refer to slaterjl2006 for example
 
+IMPORTANT: Activity & Quota Queries
+- "what activities can I log?", "list activities", "show activity points", "what are the activities?" -> list_activities
+- "what are the quotas?", "list quotas", "show quota requirements", "how many points do ranks need?" -> list_quotas
+
 Note: Always use SINGULAR form of rank names (General, not Generals; Commander, not Commanders)
 
 CRITICAL: Activity Type Spelling
+- Match user speech to the closest valid activity type name listed above.
 - "cancelled training" or "canceled training" -> MUST map to "Cancelled Training"
 - "cancelled tryout" or "canceled tryout" -> MUST map to "Cancelled Tryout"
 - "tryout grading" -> MUST map to "Tryout Grading"
 - "dueling supervision" or "evaluation" or "dueling evaluation" -> MUST map to "Dueling Supervision/Evaluation"
 - "tryout certification" or "tryout cert" -> MUST map to "Tryout Certification"
 - "supervision" -> MUST map to "Supervision"
+- "jct" or "joint combat" -> MUST map to "Joint Combat Training"
 - This is extremely important for the database to recognize the activity.
 
 IMPORTANT: Single vs Bulk Activity Logging
@@ -158,35 +230,50 @@ IMPORTANT: Check Points Recognition
 - "check points for [member]" -> check_points with member name
 
 Examples of correct parsing:
-1.  "show all generals" -> {"action": "list_members", "parameters": {"rank": "General"}}
-2.  "change John to Commander" -> {"action": "change_rank", "parameters": {"member_name": "John", "new_rank": "Commander"}}
-3.  "log a cancelled training for Clicky" -> {"action": "log_activity", "parameters": {"member_name": "Clicky", "activity_type": "Cancelled Training"}}
-4.  "log 4 trainings for John" -> {"action": "bulk_log_activity", "parameters": {"member_name": "John", "activity_type": "Training", "quantity": 4}}
-5.  "log 8 missions for Sarah" -> {"action": "bulk_log_activity", "parameters": {"member_name": "Sarah", "activity_type": "Mission", "quantity": 8}}
-6.  "remove training for John" -> {"action": "remove_activity", "parameters": {"member_name": "John", "activity_type": "Training"}}
-7.  "undo raid for Sarah" -> {"action": "remove_activity", "parameters": {"member_name": "Sarah", "activity_type": "Raid"}}
-8.  "remove 3 trainings from John" -> {"action": "bulk_remove_activity", "parameters": {"member_name": "John", "activity_type": "Training", "quantity": 3}}
-9.  "delete 5 missions from Bob" -> {"action": "bulk_remove_activity", "parameters": {"member_name": "Bob", "activity_type": "Mission", "quantity": 5}}
-10. "how many trainings does John have" -> {"action": "count_activities", "parameters": {"member_name": "John", "activity_type": "Training"}}
-11. "count raids for Sarah this cycle" -> {"action": "count_activities", "parameters": {"member_name": "Sarah", "activity_type": "Raid", "period_only": true}}
-12. "how many activities does Bob have" -> {"action": "count_activities", "parameters": {"member_name": "Bob"}}
-13. "how many points does John have" -> {"action": "check_points", "parameters": {"member_name": "John"}}
+1.  "show all generals" -> {{"action": "list_members", "parameters": {{"rank": "General"}}}}
+2.  "change John to Commander" -> {{"action": "change_rank", "parameters": {{"member_name": "John", "new_rank": "Commander"}}}}
+3.  "log a cancelled training for Clicky" -> {{"action": "log_activity", "parameters": {{"member_name": "Clicky", "activity_type": "Cancelled Training"}}}}
+4.  "log 4 trainings for John" -> {{"action": "bulk_log_activity", "parameters": {{"member_name": "John", "activity_type": "Training", "quantity": 4}}}}
+5.  "log 8 missions for Sarah" -> {{"action": "bulk_log_activity", "parameters": {{"member_name": "Sarah", "activity_type": "Mission", "quantity": 8}}}}
+6.  "remove training for John" -> {{"action": "remove_activity", "parameters": {{"member_name": "John", "activity_type": "Training"}}}}
+7.  "undo raid for Sarah" -> {{"action": "remove_activity", "parameters": {{"member_name": "Sarah", "activity_type": "Raid"}}}}
+8.  "remove 3 trainings from John" -> {{"action": "bulk_remove_activity", "parameters": {{"member_name": "John", "activity_type": "Training", "quantity": 3}}}}
+9.  "delete 5 missions from Bob" -> {{"action": "bulk_remove_activity", "parameters": {{"member_name": "Bob", "activity_type": "Mission", "quantity": 5}}}}
+10. "how many trainings does John have" -> {{"action": "count_activities", "parameters": {{"member_name": "John", "activity_type": "Training"}}}}
+11. "count raids for Sarah this cycle" -> {{"action": "count_activities", "parameters": {{"member_name": "Sarah", "activity_type": "Raid", "period_only": true}}}}
+12. "how many activities does Bob have" -> {{"action": "count_activities", "parameters": {{"member_name": "Bob"}}}}
+13. "how many points does John have" -> {{"action": "check_points", "parameters": {{"member_name": "John"}}}}
+14. "what activities can I log?" -> {{"action": "list_activities", "parameters": {{}}}}
+15. "what are the quotas?" -> {{"action": "list_quotas", "parameters": {{}}}}
 
 Respond ONLY with a JSON object in this format:
-{
+{{
   "action": "action_name",
-  "parameters": {
+  "parameters": {{
     "member_name": "extracted name",
     "new_rank": "rank name",
     "rank": "rank filter",
     "activity_type": "activity type",
     "quantity": 1,
     "period_only": false
-  },
+  }},
   "confidence": 0.0-1.0
-}
+}}
 
 If you can't parse the command, set action to "unknown" and explain in a "reason" field."""
+
+
+async def parse_intent_with_groq(user_message: str) -> dict:
+    """
+    Use Groq AI to parse user intent and extract entities
+    
+    Args:
+        user_message: The user's natural language command
+    
+    Returns:
+        dict: Parsed intent with action, parameters, etc.
+    """
+    system_prompt = await build_dynamic_system_prompt()
 
 
     try:
@@ -254,6 +341,15 @@ class TFSystemCog(commands.Cog):
         user_roles = [role.name for role in user.roles]
         return any(role in ALLOWED_ROLES for role in user_roles)
 
+    def check_general_permissions(self, user):
+        """Check if user has General role (ID: 729817672585314305 or name 'General')"""
+        if not hasattr(user, 'roles'):
+            return False
+        return any(
+            role.id == GENERAL_ROLE_ID or role.name.lower() == "general"
+            for role in user.roles
+        )
+
     @commands.Cog.listener()
     async def on_message(self, message):
         # Ignore messages from self
@@ -318,6 +414,34 @@ class TFSystemCog(commands.Cog):
         handler = ResponseHandler(interaction, is_interaction=True)
         await self.process_command(handler, command)
 
+    @app_commands.command(name="activities", description="Consult active Taskforce activities and point values (General only)")
+    @has_general_role()
+    async def slash_activities(self, interaction: discord.Interaction):
+        if ALLOWED_GUILD_ID and str(interaction.guild_id) != str(ALLOWED_GUILD_ID):
+            await interaction.response.send_message(
+                "❌ This bot is restricted to the Taskforce server.",
+                ephemeral=True
+            )
+            return
+
+        await interaction.response.defer()
+        handler = ResponseHandler(interaction, is_interaction=True)
+        await self._handle_list_activities(handler)
+
+    @app_commands.command(name="quotas", description="Consult Taskforce rank quota requirements (General only)")
+    @has_general_role()
+    async def slash_quotas(self, interaction: discord.Interaction):
+        if ALLOWED_GUILD_ID and str(interaction.guild_id) != str(ALLOWED_GUILD_ID):
+            await interaction.response.send_message(
+                "❌ This bot is restricted to the Taskforce server.",
+                ephemeral=True
+            )
+            return
+
+        await interaction.response.defer()
+        handler = ResponseHandler(interaction, is_interaction=True)
+        await self._handle_list_quotas(handler)
+
     async def process_command(self, handler: ResponseHandler, command_text: str):
         """Unified command processing logic"""
         try:
@@ -377,6 +501,18 @@ class TFSystemCog(commands.Cog):
             
             elif intent['action'] == 'check_points':
                 await self._handle_check_points(handler, intent['parameters'])
+
+            elif intent['action'] == 'list_activities':
+                if not self.check_general_permissions(handler.user):
+                    await handler.send("❌ Consulting activities is restricted to members with the **General** role.")
+                    return
+                await self._handle_list_activities(handler)
+
+            elif intent['action'] == 'list_quotas':
+                if not self.check_general_permissions(handler.user):
+                    await handler.send("❌ Consulting rank quotas is restricted to members with the **General** role.")
+                    return
+                await self._handle_list_quotas(handler)
             
             else:
                 # Should not happen if unknown is handled
@@ -929,6 +1065,60 @@ class TFSystemCog(commands.Cog):
                 )
         except Exception as e:
             await handler.send(f"❌ Error checking points: {str(e)}")
+
+    async def _handle_list_activities(self, handler: ResponseHandler):
+        """Display all currently configured active activity types and their point values."""
+        try:
+            activities = await tf_api.get_activity_types()
+            if not activities:
+                await handler.send("❌ Could not retrieve activity types from the system.")
+                return
+
+            embed = discord.Embed(
+                title="📋 Taskforce Activity Point Values",
+                description="Current point values and cycle limits configured in the system:",
+                color=discord.Color.purple()
+            )
+            for act in activities:
+                name = act.get('name', 'Unknown')
+                pts = act.get('points', 0.0)
+                pts_str = f"{int(pts)}" if pts == int(pts) else f"{pts}"
+                limit_info = "⚠️ *Max 1 per cycle*" if act.get('is_limited') else "✅ *Unlimited*"
+                desc = f"\n> {act.get('description')}" if act.get('description') else ""
+                embed.add_field(
+                    name=f"{name} — {pts_str} pts",
+                    value=f"{limit_info}{desc}",
+                    inline=False
+                )
+            await handler.send(embed=embed)
+        except Exception as e:
+            await handler.send(f"❌ Error listing activities: {e}")
+
+    async def _handle_list_quotas(self, handler: ResponseHandler):
+        """Display all currently configured rank quota requirements."""
+        try:
+            quotas = await tf_api.get_rank_quotas()
+            if not quotas:
+                await handler.send("❌ Could not retrieve rank quotas from the system.")
+                return
+
+            embed = discord.Embed(
+                title="🎖️ Rank Quota Requirements",
+                description="Current AC quota point requirements by rank:",
+                color=discord.Color.gold()
+            )
+            for q in quotas:
+                rank_name = q.get('rank_name', 'Unknown')
+                pts = q.get('required_points', 0.0)
+                pts_str = f"{int(pts)}" if pts == int(pts) else f"{pts}"
+                embed.add_field(
+                    name=rank_name,
+                    value=f"**{pts_str}** points required",
+                    inline=True
+                )
+            await handler.send(embed=embed)
+        except Exception as e:
+            await handler.send(f"❌ Error listing quotas: {e}")
 
 # Setup function for adding the cog to your bot
 async def setup(bot):
