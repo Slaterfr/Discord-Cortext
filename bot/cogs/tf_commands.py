@@ -100,9 +100,10 @@ Activity Types and Points:
 - Cancelled Tryout: 0.5 points (only 1 per cycle)
 - Tryout Grading: 0.5 points (only 1 per cycle)
 - Dueling Supervision/Evaluation: 0.5 points (only 1 per cycle)
+- Joint Combat Training (JCT): 1.5 points 
 
 Valid ranks: Aspirant, Novice, Adept, Crusader, Paladin, Exemplar, Prospect, Commander, Marshal, General, Chief General
-Valid activity types: Raid, Patrol, Training, Mission, Supervision, Tryout, Tryout Certification, Cancelled Training, Cancelled Tryout, Tryout Grading, Dueling Supervision/Evaluation
+Valid activity types: Raid, Patrol, Training, Mission, Supervision, Tryout, Tryout Certification, Cancelled Training, Cancelled Tryout, Tryout Grading, Dueling Supervision/Evaluation, Joint Combat Training
 
 IMPORTANT: Recognize these variations for listing members:
 - "show all members" -> list_members with no rank filter
