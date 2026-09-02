@@ -1069,7 +1069,7 @@ class TFSystemCog(commands.Cog):
     async def _handle_list_activities(self, handler: ResponseHandler):
         """Display all currently configured active activity types and their point values."""
         try:
-            activities = await tf_api.get_activity_types()
+            activities = await tf_api.get_activity_types(force_refresh=True)
             if not activities:
                 await handler.send("❌ Could not retrieve activity types from the system.")
                 return
@@ -1097,7 +1097,7 @@ class TFSystemCog(commands.Cog):
     async def _handle_list_quotas(self, handler: ResponseHandler):
         """Display all currently configured rank quota requirements."""
         try:
-            quotas = await tf_api.get_rank_quotas()
+            quotas = await tf_api.get_rank_quotas(force_refresh=True)
             if not quotas:
                 await handler.send("❌ Could not retrieve rank quotas from the system.")
                 return
