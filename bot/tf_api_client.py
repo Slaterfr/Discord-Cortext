@@ -29,13 +29,16 @@ class TFSystemAPI:
         )
     """
     
-    def __init__(self, api_url: str = None, api_key: str = None):
+    def __init__(self, api_url: str = None, api_key: str = None, group_id: Optional[int] = None, roblox_group_id: Optional[str] = None, discord_group_id: Optional[str] = None):
         """
         Initialize the API client
         
         Args:
             api_url: Base URL of the TF System API (e.g., https://your-app.onrender.com/api/v1)
             api_key: API key for authentication
+            group_id: Optional system group ID for multi-tenant routing (defaults to 1)
+            roblox_group_id: Optional Roblox group ID for multi-tenant routing
+            discord_group_id: Optional Discord Guild ID for multi-tenant routing
         """
         self.api_url = api_url or os.getenv('TF_SYSTEM_API_URL', 'http://localhost:5000/api/v1')
         self.api_key = api_key or os.getenv('TF_SYSTEM_API_KEY', '')
@@ -43,10 +46,21 @@ class TFSystemAPI:
         if not self.api_key:
             raise ValueError("API key must be provided or set in TF_SYSTEM_API_KEY environment variable")
         
+        self.group_id = group_id or (int(os.getenv('TF_SYSTEM_GROUP_ID')) if os.getenv('TF_SYSTEM_GROUP_ID') else None)
+        self.roblox_group_id = roblox_group_id or os.getenv('TF_ROBLOX_GROUP_ID')
+        self.discord_group_id = discord_group_id or os.getenv('TF_DISCORD_GROUP_ID')
+
         self.headers = {
             'Authorization': f'Bearer {self.api_key}',
             'Content-Type': 'application/json'
         }
+
+        if self.group_id:
+            self.headers['X-Group-ID'] = str(self.group_id)
+        elif self.roblox_group_id:
+            self.headers['X-Roblox-Group-ID'] = str(self.roblox_group_id)
+        elif self.discord_group_id:
+            self.headers['X-Discord-Group-ID'] = str(self.discord_group_id)
 
         # In-memory TTL cache for dynamic configuration
         self._activity_types_cache = None
@@ -54,14 +68,43 @@ class TFSystemAPI:
         self._quotas_cache = None
         self._quotas_cache_time = None
         self._cache_ttl = 300  # 5 minutes
+
+    def set_tenant(self, group_id: Optional[int] = None, roblox_group_id: Optional[str] = None, discord_group_id: Optional[str] = None):
+        """Switch tenant scope dynamically on client instance"""
+        if group_id:
+            self.group_id = group_id
+            self.headers['X-Group-ID'] = str(group_id)
+            self.headers.pop('X-Roblox-Group-ID', None)
+            self.headers.pop('X-Discord-Group-ID', None)
+        elif roblox_group_id:
+            self.roblox_group_id = str(roblox_group_id)
+            self.headers['X-Roblox-Group-ID'] = str(roblox_group_id)
+            self.headers.pop('X-Group-ID', None)
+            self.headers.pop('X-Discord-Group-ID', None)
+        elif discord_group_id:
+            self.discord_group_id = str(discord_group_id)
+            self.headers['X-Discord-Group-ID'] = str(discord_group_id)
+            self.headers.pop('X-Group-ID', None)
+            self.headers.pop('X-Roblox-Group-ID', None)
+        # Invalidate caches upon switching tenant
+        self._activity_types_cache = None
+        self._quotas_cache = None
+
     
     async def _request(self, method: str, endpoint: str, **kwargs) -> Dict:
-        """Make an HTTP request to the API"""
+        """Make an HTTP request to the API with optional per-request guild_id multi-tenant routing"""
         url = f"{self.api_url}{endpoint}"
         
+        req_headers = self.headers.copy()
+        guild_id = kwargs.pop('guild_id', None)
+        if guild_id:
+            req_headers['X-Discord-Group-ID'] = str(guild_id)
+        if 'headers' in kwargs:
+            req_headers.update(kwargs.pop('headers'))
+
         async with aiohttp.ClientSession() as session:
             try:
-                async with session.request(method, url, headers=self.headers, **kwargs) as response:
+                async with session.request(method, url, headers=req_headers, **kwargs) as response:
                     data = await response.json()
                     
                     # Check for rate limiting
@@ -91,14 +134,17 @@ class TFSystemAPI:
     # SYSTEM STATUS
     # ========================================
     
-    async def get_status(self) -> Dict:
+    async def get_status(self, guild_id: Optional[str] = None) -> Dict:
         """
         Get system status
         
+        Args:
+            guild_id: Optional Discord guild/server ID for multi-tenant routing
+            
         Returns:
             dict: System status information
         """
-        return await self._request('GET', '/status')
+        return await self._request('GET', '/status', guild_id=guild_id)
     
     async def verify_auth(self) -> Dict:
         """
@@ -527,6 +573,46 @@ class TFSystemAPI:
             if act.get('name', '').lower() == name_lower:
                 return act
         return None
+
+    async def get_group_by_discord_id(self, discord_group_id: str) -> Dict:
+        """
+        Look up sector / group configuration by Discord Guild ID.
+        
+        Args:
+            discord_group_id: Discord server/guild ID string
+        """
+        return await self._request('GET', f'/groups/by-discord-id/{discord_group_id}')
+
+    async def check_permission(
+        self,
+        discord_user_id: Optional[str] = None,
+        action: str = 'view_data',
+        guild_id: Optional[str] = None,
+        roblox_id: Optional[str] = None,
+        roles: Optional[List[str]] = None
+    ) -> Dict:
+        """
+        Check if a Discord member has permission for an action in this guild's sector.
+        Evaluates server roles directly against the sector's Rank Permissions Matrix.
+        
+        Args:
+            discord_user_id: Caller's Discord User ID string
+            action: Action string (promote, log_activity, delete_activity, view_data, manage_ac, hct)
+            guild_id: Discord server/guild ID
+            roblox_id: Optional Roblox ID of the caller
+            roles: List of Discord server role names (e.g. ['General', 'Staff Team'])
+        """
+        payload = {
+            'action': action
+        }
+        if discord_user_id:
+            payload['discord_user_id'] = str(discord_user_id)
+        if roles:
+            payload['discord_roles'] = [str(r) for r in roles]
+        if roblox_id:
+            payload['roblox_id'] = str(roblox_id)
+        return await self._request('POST', '/permissions/check', guild_id=guild_id, json=payload)
+
 
 # Example usage in a Discord bot
 if __name__ == '__main__':

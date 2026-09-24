@@ -43,6 +43,22 @@ tf_api = TFSystemAPI(
 # Define allowed roles (Commander, Marshal, General)
 ALLOWED_ROLES = ['Staff Team', 'Prospect', 'Commander', 'Marshal', 'General']
 GENERAL_ROLE_ID = 729817672585314305
+DEVELOPER_DISCORD_ID = 751920066332721152
+
+
+def is_developer():
+    """Decorator to restrict diagnostic commands to the platform developer."""
+    async def predicate(interaction: discord.Interaction):
+        if interaction.user.id != DEVELOPER_DISCORD_ID:
+            await interaction.response.send_message(
+                "❌ This command is restricted to the platform developer.",
+                ephemeral=True
+            )
+            return False
+        return True
+
+    return app_commands.check(predicate)
+
 
 
 def has_tf_permissions():
@@ -327,6 +343,12 @@ class ResponseHandler:
     def user(self):
         return self.context.user if self.is_interaction else self.context.author
 
+    @property
+    def guild_id(self):
+        if self.is_interaction:
+            return str(self.context.guild_id or (self.context.guild.id if self.context.guild else ''))
+        return str(self.context.guild.id if self.context.guild else '')
+
 
 class TFSystemCog(commands.Cog):
     """Cog for TF System management commands"""
@@ -350,6 +372,66 @@ class TFSystemCog(commands.Cog):
             for role in user.roles
         )
 
+    async def check_action_permission(self, handler: ResponseHandler, action: str) -> bool:
+        """Check caller authorization dynamically using their Discord server roles and sector rank permissions."""
+        user = handler.user
+        if getattr(user, 'id', None) == DEVELOPER_DISCORD_ID:
+            return True
+        guild = getattr(handler.context, 'guild', None)
+        if guild and getattr(user, 'guild_permissions', None) and user.guild_permissions.administrator:
+            return True
+        if guild and guild.owner_id == user.id:
+            return True
+
+        user_roles = [role.name for role in getattr(user, 'roles', []) if role.name != '@everyone']
+        guild_id = handler.guild_id
+
+        if guild_id:
+            try:
+                res = await tf_api.check_permission(
+                    discord_user_id=str(user.id),
+                    action=action,
+                    guild_id=guild_id,
+                    roles=user_roles
+                )
+                if res.get('success'):
+                    if res.get('allowed'):
+                        return True
+                    else:
+                        reason = res.get('reason') or f"You do not have permission for '{action}' in this sector."
+                        await handler.send(f"❌ {reason}")
+                        return False
+            except Exception as e:
+                print(f"[TF Commands] Error checking dynamic permissions: {e}")
+
+        # Fallback to local role names (e.g. if API is unreachable)
+        if action == 'view_data':
+            return True
+        if action in ['promote', 'delete_activity', 'manage_ac'] and any(getattr(r, 'name', '').lower() in ['general', 'marshal', 'commander'] or getattr(r, 'id', 0) == GENERAL_ROLE_ID for r in getattr(user, 'roles', [])):
+            return True
+        if action == 'log_activity' and any(role in ALLOWED_ROLES for role in user_roles):
+            return True
+
+        await handler.send(f"❌ You do not have permission to perform this action in this sector.")
+        return False
+
+    async def _resolve_guild_access(self, guild_id) -> bool:
+        """Verify guild access and configure tf_api tenant scope for this guild."""
+        if not guild_id:
+            return not bool(ALLOWED_GUILD_ID)
+        guild_id_str = str(guild_id)
+        if ALLOWED_GUILD_ID and guild_id_str == str(ALLOWED_GUILD_ID):
+            tf_api.set_tenant(discord_group_id=guild_id_str)
+            return True
+        try:
+            grp_res = await tf_api.get_group_by_discord_id(guild_id_str)
+            if grp_res.get('success'):
+                tf_api.set_tenant(discord_group_id=guild_id_str)
+                return True
+        except Exception as e:
+            print(f"[TF Commands] Error resolving guild tenant for {guild_id_str}: {e}")
+        return False
+
     @commands.Cog.listener()
     async def on_message(self, message):
         # Ignore messages from self
@@ -364,10 +446,9 @@ class TFSystemCog(commands.Cog):
                 if not permissions.send_messages:
                     return
             
-            # Check for allowed guild
-            if ALLOWED_GUILD_ID and message.guild and str(message.guild.id) != str(ALLOWED_GUILD_ID):
-               # Optional: log or ignore. Ignoring is usually safer to avoid spam.
-               return
+            # Check for allowed guild or multi-tenant sector guild
+            if message.guild and not await self._resolve_guild_access(message.guild.id):
+                return
             # Clean content: remove mention
             content = message.content.replace(f'<@{self.bot.user.id}>', '').strip()
             # Also handle nickname mentions if any
@@ -395,6 +476,8 @@ class TFSystemCog(commands.Cog):
                         import traceback
                         print(f"Error in on_message handler (without typing): {inner_e}")
                         traceback.print_exc()
+                    else:
+                        pass
                 else:
                     import traceback
                     print(f"Error in on_message handler: {e}")
@@ -403,9 +486,9 @@ class TFSystemCog(commands.Cog):
     @app_commands.command(name="tf", description="Natural language TF management command")
     @has_tf_permissions()
     async def tf_command(self, interaction: discord.Interaction, command: str):
-        if ALLOWED_GUILD_ID and str(interaction.guild_id) != str(ALLOWED_GUILD_ID):
+        if not await self._resolve_guild_access(interaction.guild_id):
             await interaction.response.send_message(
-                "❌ This bot is restricted to the Taskforce server.",
+                "❌ This bot is restricted to configured sector servers.",
                 ephemeral=True
             )
             return
@@ -417,9 +500,9 @@ class TFSystemCog(commands.Cog):
     @app_commands.command(name="activities", description="Consult active Taskforce activities and point values (General only)")
     @has_general_role()
     async def slash_activities(self, interaction: discord.Interaction):
-        if ALLOWED_GUILD_ID and str(interaction.guild_id) != str(ALLOWED_GUILD_ID):
+        if not await self._resolve_guild_access(interaction.guild_id):
             await interaction.response.send_message(
-                "❌ This bot is restricted to the Taskforce server.",
+                "❌ This bot is restricted to configured sector servers.",
                 ephemeral=True
             )
             return
@@ -431,9 +514,9 @@ class TFSystemCog(commands.Cog):
     @app_commands.command(name="quotas", description="Consult Taskforce rank quota requirements (General only)")
     @has_general_role()
     async def slash_quotas(self, interaction: discord.Interaction):
-        if ALLOWED_GUILD_ID and str(interaction.guild_id) != str(ALLOWED_GUILD_ID):
+        if not await self._resolve_guild_access(interaction.guild_id):
             await interaction.response.send_message(
-                "❌ This bot is restricted to the Taskforce server.",
+                "❌ This bot is restricted to configured sector servers.",
                 ephemeral=True
             )
             return
@@ -441,6 +524,99 @@ class TFSystemCog(commands.Cog):
         await interaction.response.defer()
         handler = ResponseHandler(interaction, is_interaction=True)
         await self._handle_list_quotas(handler)
+
+    @app_commands.command(name="tenant", description="Verify the Nexus sector/tenant identified for this Discord server (Developer only)")
+    @is_developer()
+    async def slash_tenant(self, interaction: discord.Interaction):
+        """Slash command to verify the active multi-tenant sector mapped to this Discord server."""
+        await interaction.response.defer(ephemeral=True)
+        handler = ResponseHandler(interaction, is_interaction=True)
+        await self._handle_check_tenant(handler)
+
+    @app_commands.command(name="sector", description="Verify the Nexus sector/tenant identified for this Discord server (Developer only)")
+    @is_developer()
+    async def slash_sector(self, interaction: discord.Interaction):
+        """Alias for /tenant command"""
+        await self.slash_tenant(interaction)
+
+    async def _handle_check_tenant(self, handler: ResponseHandler):
+        """Build and send a diagnostic embed showing the identified tenant/sector for the guild."""
+        if getattr(handler.user, 'id', None) != DEVELOPER_DISCORD_ID:
+            await handler.send("❌ This diagnostic command is restricted to the platform developer.")
+            return
+
+        guild = getattr(handler.context, 'guild', None)
+        guild_id_str = handler.guild_id
+        guild_name = guild.name if guild else "Direct Message / Unknown"
+
+        try:
+            grp_res = await tf_api.get_group_by_discord_id(guild_id_str)
+            status_res = await tf_api.get_status(guild_id=guild_id_str)
+        except Exception as e:
+            await handler.send(f"❌ Failed to query Nexus API: {e}")
+            return
+
+        if grp_res.get('success') and grp_res.get('group'):
+            group = grp_res.get('group')
+            group_id = group.get('id')
+            group_name = group.get('name')
+            roblox_group_id = group.get('roblox_group_id') or 'Not Configured'
+            discord_group_id = group.get('discord_group_id') or 'Not Configured'
+            description = group.get('description') or 'No description provided.'
+            member_count = status_res.get('total_members', 'N/A')
+            db_status = status_res.get('database', 'unknown')
+            roblox_sync = status_res.get('roblox_sync', 'unknown')
+
+            embed = discord.Embed(
+                title=f"🛡️ Nexus Sector Identified: {group_name}",
+                description=f"This Discord server is officially registered and routed to **Sector {group_id}**.",
+                color=discord.Color.from_rgb(168, 85, 247),
+                timestamp=discord.utils.utcnow()
+            )
+            embed.add_field(name="🏛️ Sector Name", value=f"**{group_name}**", inline=True)
+            embed.add_field(name="🆔 System Tenant ID", value=f"`{group_id}`", inline=True)
+            embed.add_field(name="👥 Active Personnel", value=f"`{member_count}` registered", inline=True)
+            embed.add_field(name="🟥 Roblox Group ID", value=f"`{roblox_group_id}`", inline=True)
+            embed.add_field(name="💬 Discord Server ID", value=f"`{discord_group_id}`", inline=True)
+            embed.add_field(name="⚡ API Database", value=f"`{db_status.upper()}`", inline=True)
+            embed.add_field(name="🔄 Roblox Sync", value=f"`{roblox_sync.upper()}`", inline=True)
+            embed.add_field(name="📝 Description", value=description, inline=False)
+            embed.set_footer(text=f"Nexus Multi-Tenant System • Guild: {guild_name} ({guild_id_str})")
+            await handler.send(embed=embed)
+        else:
+            is_legacy_default = (ALLOWED_GUILD_ID and str(ALLOWED_GUILD_ID) == guild_id_str)
+            if is_legacy_default:
+                embed = discord.Embed(
+                    title="🛡️ Nexus Default Tenant (Fallback)",
+                    description=f"This server matches the default `ALLOWED_GUILD_ID` and is mapped to **Tenant 1 (Taskforce)**.",
+                    color=discord.Color.from_rgb(56, 189, 248),
+                    timestamp=discord.utils.utcnow()
+                )
+                embed.add_field(name="🏛️ Sector Name", value="**Taskforce (Default)**", inline=True)
+                embed.add_field(name="🆔 System Tenant ID", value="`1`", inline=True)
+                embed.add_field(name="💬 Discord Server ID", value=f"`{guild_id_str}`", inline=True)
+                embed.set_footer(text=f"Nexus System • Guild: {guild_name}")
+                await handler.send(embed=embed)
+            else:
+                embed = discord.Embed(
+                    title="⚠️ Unregistered Discord Server",
+                    description=f"No sector in the Nexus database is configured for Discord Server ID: `{guild_id_str}`.",
+                    color=discord.Color.from_rgb(239, 68, 68),
+                    timestamp=discord.utils.utcnow()
+                )
+                embed.add_field(name="💬 Current Server", value=f"**{guild_name}** (`{guild_id_str}`)", inline=False)
+                embed.add_field(
+                    name="🔧 How to Link this Server",
+                    value=(
+                        "1. Open the **Nexus Web Portal**.\n"
+                        "2. Go to **Sector Settings** (`/group/settings`).\n"
+                        f"3. In the **Discord Server ID** field, enter `{guild_id_str}` and save.\n"
+                        "4. Run `/tenant` again to confirm identification."
+                    ),
+                    inline=False
+                )
+                embed.set_footer(text="Nexus Multi-Tenant System • Unmapped Guild")
+                await handler.send(embed=embed)
 
     async def process_command(self, handler: ResponseHandler, command_text: str):
         """Unified command processing logic"""
@@ -453,20 +629,22 @@ class TFSystemCog(commands.Cog):
                 await handler.send("❌ I didn't understand that command. Try rephrasing you request, or contacting a General for support.")
                 return
             
-            # Execute based on action
-            # For actions that modify state, check permissions
-            protected_actions = [
-                'change_rank', 'add_member', 'remove_member',
-                'log_activity', 'bulk_log_activity',
-                'remove_activity', 'bulk_remove_activity',
-            ]
-            
-            if intent['action'] in protected_actions:
-                 if not self.check_permissions(handler.user):
-                    await handler.send(
-                        f"❌ You don't have permission to perform this action. "
-                        f"Required roles: {', '.join(ALLOWED_ROLES)}"
-                    )
+            # Execute based on action using dynamic sector rank permissions
+            action_perm_map = {
+                'change_rank': 'promote',
+                'add_member': 'promote',
+                'remove_member': 'promote',
+                'log_activity': 'log_activity',
+                'bulk_log_activity': 'log_activity',
+                'remove_activity': 'delete_activity',
+                'bulk_remove_activity': 'delete_activity',
+                'list_activities': 'view_data',
+                'list_quotas': 'view_data',
+            }
+
+            required_perm = action_perm_map.get(intent['action'])
+            if required_perm:
+                if not await self.check_action_permission(handler, required_perm):
                     return
 
             if intent['action'] == 'change_rank':
@@ -503,17 +681,14 @@ class TFSystemCog(commands.Cog):
                 await self._handle_check_points(handler, intent['parameters'])
 
             elif intent['action'] == 'list_activities':
-                if not self.check_general_permissions(handler.user):
-                    await handler.send("❌ Consulting activities is restricted to members with the **General** role.")
-                    return
                 await self._handle_list_activities(handler)
 
             elif intent['action'] == 'list_quotas':
-                if not self.check_general_permissions(handler.user):
-                    await handler.send("❌ Consulting rank quotas is restricted to members with the **General** role.")
-                    return
                 await self._handle_list_quotas(handler)
-            
+
+            elif intent['action'] in ['check_tenant', 'tenant', 'sector']:
+                await self._handle_check_tenant(handler)
+
             else:
                 # Should not happen if unknown is handled
                 await handler.send("❌ Unknown action returned from parser.")
