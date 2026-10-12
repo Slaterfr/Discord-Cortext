@@ -44,8 +44,9 @@ tf_api = TFSystemAPI(
 ALLOWED_ROLES = ['Staff Team', 'Prospect', 'Commander', 'Marshal', 'General']
 GENERAL_ROLE_ID = 729817672585314305
 DEVELOPER_DISCORD_ID = 751920066332721152
+STRIKE_CHANNEL_ID = int(os.getenv('STRIKE_CHANNEL_ID', '986722806442127430'))
 
-
+# 986722806442127430
 def is_developer():
     """Decorator to restrict diagnostic commands to the platform developer."""
     async def predicate(interaction: discord.Interaction):
@@ -524,6 +525,51 @@ class TFSystemCog(commands.Cog):
         await interaction.response.defer()
         handler = ResponseHandler(interaction, is_interaction=True)
         await self._handle_list_quotas(handler)
+
+    @app_commands.command(name="strike", description="Post a strike notice to the designated strikes channel (General only)")
+    @app_commands.describe(message="The strike message to log")
+    @has_general_role()
+    async def slash_strike(self, interaction: discord.Interaction, message: str):
+        if not await self._resolve_guild_access(interaction.guild_id):
+            await interaction.response.send_message(
+                "❌ This bot is restricted to configured sector servers.",
+                ephemeral=True
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        channel = self.bot.get_channel(STRIKE_CHANNEL_ID)
+        if not channel:
+            try:
+                channel = await self.bot.fetch_channel(STRIKE_CHANNEL_ID)
+            except Exception as e:
+                await interaction.followup.send(
+                    f"❌ Unable to find or access the strikes channel (ID: {STRIKE_CHANNEL_ID}): {e}",
+                    ephemeral=True
+                )
+                return
+
+        # Support escaped \n as real line breaks
+        formatted_message = message.replace('\\n', '\n')
+
+        try:
+            sent_msg = await channel.send(content=formatted_message)
+            await interaction.followup.send(
+                f"✅ Strike notice posted to {channel.mention}!\n[View Message]({sent_msg.jump_url})",
+                ephemeral=True
+            )
+        except discord.Forbidden:
+            await interaction.followup.send(
+                f"❌ Bot does not have permissions to post in {channel.mention}.",
+                ephemeral=True
+            )
+        except Exception as e:
+            await interaction.followup.send(
+                f"❌ Error sending strike notice: {e}",
+                ephemeral=True
+            )
+
 
     @app_commands.command(name="tenant", description="Verify the Nexus sector/tenant identified for this Discord server (Developer only)")
     @is_developer()
