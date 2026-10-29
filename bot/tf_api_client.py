@@ -67,6 +67,7 @@ class TFSystemAPI:
         self._activity_types_cache_time = None
         self._quotas_cache = None
         self._quotas_cache_time = None
+        self._group_cache = {}
         self._cache_ttl = 300  # 5 minutes
 
     def set_tenant(self, group_id: Optional[int] = None, roblox_group_id: Optional[str] = None, discord_group_id: Optional[str] = None):
@@ -581,7 +582,16 @@ class TFSystemAPI:
         Args:
             discord_group_id: Discord server/guild ID string
         """
-        return await self._request('GET', f'/groups/by-discord-id/{discord_group_id}')
+        import time
+        now = time.time()
+        cached = self._group_cache.get(str(discord_group_id))
+        if cached and (now - cached['time']) < 120:
+            return cached['data']
+
+        res = await self._request('GET', f'/groups/by-discord-id/{discord_group_id}')
+        if res.get('success'):
+            self._group_cache[str(discord_group_id)] = {'time': now, 'data': res}
+        return res
 
     async def check_permission(
         self,

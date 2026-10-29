@@ -44,9 +44,8 @@ tf_api = TFSystemAPI(
 ALLOWED_ROLES = ['Staff Team', 'Prospect', 'Commander', 'Marshal', 'General']
 GENERAL_ROLE_ID = 729817672585314305
 DEVELOPER_DISCORD_ID = 751920066332721152
-STRIKE_CHANNEL_ID = int(os.getenv('STRIKE_CHANNEL_ID', '986722806442127430'))
 
-# 986722806442127430
+
 def is_developer():
     """Decorator to restrict diagnostic commands to the platform developer."""
     async def predicate(interaction: discord.Interaction):
@@ -63,42 +62,59 @@ def is_developer():
 
 
 def has_tf_permissions():
-    """Decorator to check if user has permission to manage TF"""
+    """Decorator to check if user has permission to manage sector commands"""
     async def predicate(interaction: discord.Interaction):
-        # Check if user has any of the allowed roles
-        user_roles = [role.name for role in interaction.user.roles]
-        has_permission = any(role in ALLOWED_ROLES for role in user_roles)
+        # Developer and Server Admins / Owners always have permission
+        if interaction.user.id == DEVELOPER_DISCORD_ID:
+            return True
+        guild = interaction.guild
+        if guild and getattr(interaction.user, 'guild_permissions', None) and interaction.user.guild_permissions.administrator:
+            return True
+        if guild and guild.owner_id == interaction.user.id:
+            return True
+
+        if not hasattr(interaction.user, 'roles'):
+            await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)
+            return False
+
+        user_roles = [role.name.lower() for role in interaction.user.roles]
+        # Check predefined list or common leadership keywords
+        has_permission = any(role in [r.lower() for r in ALLOWED_ROLES] for role in user_roles) or \
+                         any(any(k in r for k in ['general', 'commander', 'marshal', 'hct', 'high command', 'admin', 'staff', 'lead']) for r in user_roles)
         
         if not has_permission:
             await interaction.response.send_message(
-                "❌ You don't have permission to use this command. "
-                f"Required roles: {', '.join(ALLOWED_ROLES)}",
+                "❌ You don't have permission to use this command. Requires staff or sector leadership role.",
                 ephemeral=True
             )
             return False
-        
         return True
-    
+
     return app_commands.check(predicate)
 
 
 def has_general_role():
-    """Decorator to check if user has the General role (ID: 729817672585314305 or name 'General')"""
+    """Decorator to check if user has sector leadership / General role"""
     async def predicate(interaction: discord.Interaction):
+        if interaction.user.id == DEVELOPER_DISCORD_ID:
+            return True
+        guild = interaction.guild
+        if guild and getattr(interaction.user, 'guild_permissions', None) and interaction.user.guild_permissions.administrator:
+            return True
+        if guild and guild.owner_id == interaction.user.id:
+            return True
+
         if not hasattr(interaction.user, 'roles'):
-            await interaction.response.send_message(
-                "❌ You don't have permission to use this command.",
-                ephemeral=True
-            )
+            await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)
             return False
 
         has_role = any(
-            role.id == GENERAL_ROLE_ID or role.name.lower() == "general"
+            role.id == GENERAL_ROLE_ID or any(k in role.name.lower() for k in ['general', 'marshal', 'commander', 'hct', 'high command', 'admin', 'leader'])
             for role in interaction.user.roles
         )
         if not has_role:
             await interaction.response.send_message(
-                "❌ This command is restricted to members with the **General** role.",
+                "❌ This command is restricted to sector leadership.",
                 ephemeral=True
             )
             return False
@@ -350,6 +366,20 @@ class ResponseHandler:
             return str(self.context.guild_id or (self.context.guild.id if self.context.guild else ''))
         return str(self.context.guild.id if self.context.guild else '')
 
+    @property
+    def channel_id(self):
+        if self.is_interaction:
+            return str(self.context.channel_id or (self.context.channel.id if self.context.channel else ''))
+        return str(self.context.channel.id if self.context.channel else '')
+
+    @property
+    def channel(self):
+        return self.context.channel
+
+    @property
+    def guild(self):
+        return self.context.guild
+
 
 class TFSystemCog(commands.Cog):
     """Cog for TF System management commands"""
@@ -484,8 +514,7 @@ class TFSystemCog(commands.Cog):
                     print(f"Error in on_message handler: {e}")
                     traceback.print_exc()
 
-    @app_commands.command(name="tf", description="Natural language TF management command")
-    @has_tf_permissions()
+    @app_commands.command(name="tf", description="Natural language sector management command")
     async def tf_command(self, interaction: discord.Interaction, command: str):
         if not await self._resolve_guild_access(interaction.guild_id):
             await interaction.response.send_message(
@@ -498,8 +527,7 @@ class TFSystemCog(commands.Cog):
         handler = ResponseHandler(interaction, is_interaction=True)
         await self.process_command(handler, command)
 
-    @app_commands.command(name="activities", description="Consult active Taskforce activities and point values (General only)")
-    @has_general_role()
+    @app_commands.command(name="activities", description="Consult active sector activities and point values")
     async def slash_activities(self, interaction: discord.Interaction):
         if not await self._resolve_guild_access(interaction.guild_id):
             await interaction.response.send_message(
@@ -510,10 +538,11 @@ class TFSystemCog(commands.Cog):
 
         await interaction.response.defer()
         handler = ResponseHandler(interaction, is_interaction=True)
+        if not await self.check_action_permission(handler, 'view_data'):
+            return
         await self._handle_list_activities(handler)
 
-    @app_commands.command(name="quotas", description="Consult Taskforce rank quota requirements (General only)")
-    @has_general_role()
+    @app_commands.command(name="quotas", description="Consult sector rank quota requirements")
     async def slash_quotas(self, interaction: discord.Interaction):
         if not await self._resolve_guild_access(interaction.guild_id):
             await interaction.response.send_message(
@@ -524,52 +553,9 @@ class TFSystemCog(commands.Cog):
 
         await interaction.response.defer()
         handler = ResponseHandler(interaction, is_interaction=True)
-        await self._handle_list_quotas(handler)
-
-    @app_commands.command(name="strike", description="Post a strike notice to the designated strikes channel (General only)")
-    @app_commands.describe(message="The strike message to log")
-    @has_general_role()
-    async def slash_strike(self, interaction: discord.Interaction, message: str):
-        if not await self._resolve_guild_access(interaction.guild_id):
-            await interaction.response.send_message(
-                "❌ This bot is restricted to configured sector servers.",
-                ephemeral=True
-            )
+        if not await self.check_action_permission(handler, 'view_data'):
             return
-
-        await interaction.response.defer(ephemeral=True)
-
-        channel = self.bot.get_channel(STRIKE_CHANNEL_ID)
-        if not channel:
-            try:
-                channel = await self.bot.fetch_channel(STRIKE_CHANNEL_ID)
-            except Exception as e:
-                await interaction.followup.send(
-                    f"❌ Unable to find or access the strikes channel (ID: {STRIKE_CHANNEL_ID}): {e}",
-                    ephemeral=True
-                )
-                return
-
-        # Support escaped \n as real line breaks
-        formatted_message = message.replace('\\n', '\n')
-
-        try:
-            sent_msg = await channel.send(content=formatted_message)
-            await interaction.followup.send(
-                f"✅ Strike notice posted to {channel.mention}!\n[View Message]({sent_msg.jump_url})",
-                ephemeral=True
-            )
-        except discord.Forbidden:
-            await interaction.followup.send(
-                f"❌ Bot does not have permissions to post in {channel.mention}.",
-                ephemeral=True
-            )
-        except Exception as e:
-            await interaction.followup.send(
-                f"❌ Error sending strike notice: {e}",
-                ephemeral=True
-            )
-
+        await self._handle_list_quotas(handler)
 
     @app_commands.command(name="tenant", description="Verify the Nexus sector/tenant identified for this Discord server (Developer only)")
     @is_developer()
@@ -583,7 +569,9 @@ class TFSystemCog(commands.Cog):
     @is_developer()
     async def slash_sector(self, interaction: discord.Interaction):
         """Alias for /tenant command"""
-        await self.slash_tenant(interaction)
+        await interaction.response.defer(ephemeral=True)
+        handler = ResponseHandler(interaction, is_interaction=True)
+        await self._handle_check_tenant(handler)
 
     async def _handle_check_tenant(self, handler: ResponseHandler):
         """Build and send a diagnostic embed showing the identified tenant/sector for the guild."""
@@ -626,6 +614,14 @@ class TFSystemCog(commands.Cog):
             embed.add_field(name="💬 Discord Server ID", value=f"`{discord_group_id}`", inline=True)
             embed.add_field(name="⚡ API Database", value=f"`{db_status.upper()}`", inline=True)
             embed.add_field(name="🔄 Roblox Sync", value=f"`{roblox_sync.upper()}`", inline=True)
+
+            webhook_chan = group.get('webhook_channel_id')
+            activity_chan = group.get('activity_channel_id')
+            ranks_chan = group.get('ranks_channel_id')
+            embed.add_field(name="📢 Notifications", value=f"<#{webhook_chan}>" if webhook_chan else "`Not Configured`", inline=True)
+            embed.add_field(name="📊 Activity Channel", value=f"<#{activity_chan}>" if activity_chan else "`All Permitted Channels`", inline=True)
+            embed.add_field(name="📋 Ranks Channel", value=f"<#{ranks_chan}>" if ranks_chan else "`All Permitted Channels`", inline=True)
+
             embed.add_field(name="📝 Description", value=description, inline=False)
             embed.set_footer(text=f"Nexus Multi-Tenant System • Guild: {guild_name} ({guild_id_str})")
             await handler.send(embed=embed)
@@ -692,6 +688,29 @@ class TFSystemCog(commands.Cog):
             if required_perm:
                 if not await self.check_action_permission(handler, required_perm):
                     return
+
+            # Channel restriction check (optional per tenant)
+            guild_id_str = handler.guild_id
+            channel_id_str = handler.channel_id
+            if guild_id_str and channel_id_str:
+                try:
+                    grp_res = await tf_api.get_group_by_discord_id(guild_id_str)
+                    if grp_res.get('success') and grp_res.get('group'):
+                        grp_data = grp_res['group']
+                        ranks_chan = grp_data.get('ranks_channel_id')
+                        act_chan = grp_data.get('activity_channel_id')
+
+                        if intent['action'] in ['change_rank'] and ranks_chan:
+                            if str(channel_id_str).strip() != str(ranks_chan).strip():
+                                await handler.send(f"⚠️ Rank changes for this sector are restricted to <#{ranks_chan}>.")
+                                return
+
+                        if intent['action'] in ['log_activity', 'bulk_log_activity', 'remove_activity', 'bulk_remove_activity'] and act_chan:
+                            if str(channel_id_str).strip() != str(act_chan).strip():
+                                await handler.send(f"⚠️ Quota & activity logging for this sector is restricted to <#{act_chan}>.")
+                                return
+                except Exception as e:
+                    print(f"[TF Commands] Channel restriction check note: {e}")
 
             if intent['action'] == 'change_rank':
                 await self._handle_change_rank(handler, intent['parameters'])
